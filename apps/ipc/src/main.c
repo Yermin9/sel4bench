@@ -471,3 +471,33 @@ int main(int argc, char **argv)
     benchmark_finished(EXIT_SUCCESS);
     return 0;
 }
+
+
+
+
+
+
+
+ /* Useful functions */
+
+ /* 
+//  Set the SC parameters
+ api_sched_ctrl_configure();
+
+ Set threshold value
+ 
+
+
+ 
+ 
+  */
+
+// Copy this for SetThreshold
+//  static inline int vka_cnode_cancelBadgedSends(const cspacepath_t *src)
+// {
+//     return seL4_CNode_CancelBadgedSends(
+//                /* _service */      src->root,
+//                /* index */         src->capPtr,
+//                /* depth */         src->capDepth
+//            );
+// }

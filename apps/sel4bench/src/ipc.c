@@ -74,7 +74,7 @@ static json_t *process_ipc_results(void *r)
             .header = "Same vspace?",
             .type = JSON_TRUE,
             .bool_array = &same_vspace[0]
-        },
+        }, 
         {
             .header = "IPC length",
             .type = JSON_INTEGER,
