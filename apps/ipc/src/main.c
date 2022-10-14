@@ -311,10 +311,11 @@ static void measure_overhead(ipc_results_t *results)
                      seL4_MessageInfo_t tag10 = seL4_MessageInfo_new(0, 0, 0, 10));
 }
 
-void run_bench(env_t *env, cspacepath_t result_ep_path, seL4_CPtr ep,
+void run_bench(env_t *env, cspacepath_t result_ep_path, cspacepath_t ep_path,
                const benchmark_params_t *params,
                ccnt_t *ret1, ccnt_t *ret2,
-               helper_thread_t *client, helper_thread_t *server)
+               helper_thread_t *client, helper_thread_t *server,
+               uint64_t threshold)
 {
 
     timing_init();
@@ -326,7 +327,7 @@ void run_bench(env_t *env, cspacepath_t result_ep_path, seL4_CPtr ep,
 
     if (config_set(CONFIG_KERNEL_MCS) && params->server_fn != IPC_RECV_FUNC) {
         /* wait for server to tell us its initialised */
-        seL4_Wait(ep, NULL);
+        seL4_Wait(ep_path.capPtr, NULL);
 
         if (params->passive) {
             /* convert server to passive */
@@ -335,9 +336,25 @@ void run_bench(env_t *env, cspacepath_t result_ep_path, seL4_CPtr ep,
             ZF_LOGF_IF(error, "Failed to convert server to passive");
         }
     }
+    /* Set the threshold */
+    if (config_set(CONFIG_KERNEL_IPCTHRESHOLDS)) {
+        error = seL4_CNode_Endpoint_SetThreshold(ep_path.root, ep_path.capPtr, ep_path.capDepth, threshold);     
+        ZF_LOGF_IF(error, "Failed to set endpoint threshold\n");
+    }
 
-    error = benchmark_spawn_process(&client->process, &env->slab_vka, &env->vspace, NUM_ARGS, client->argv, 1);
-    ZF_LOGF_IF(error, "Failed to spawn client\n");
+    if (threshold==0 || !config_set(CONFIG_KERNEL_IPCTHRESHOLDS)) {
+        error = benchmark_spawn_process(&client->process, &env->slab_vka, &env->vspace, NUM_ARGS, client->argv, 1);
+        ZF_LOGF_IF(error, "Failed to spawn client\n");
+    } else {
+        error = benchmark_spawn_process(&client->process, &env->slab_vka, &env->vspace, NUM_ARGS, client->argv, 0);
+        /* Alter the SC parameters */
+        api_sched_ctrl_configure(simple_get_sched_ctrl(&env->simple, 0), client->process.thread.sched_context.cptr,
+                                    1000, 2000,
+                                        5, 0);
+
+                                        
+        seL4_TCB_Resume(client->process.thread.tcb.cptr);
+    }
 
     /* get results */
     *ret1 = get_result(result_ep_path.capPtr);
@@ -456,8 +473,8 @@ int main(int argc, char **argv)
                 server_process.process.entry_point = bench_funcs[params->server_fn];
             }
 
-            run_bench(env, result_ep_path, ep_path.capPtr, params, &end, &start, &client,
-                      params->same_vspace ? &server_thread : &server_process);
+            run_bench(env, result_ep_path, ep_path, params, &end, &start, &client,
+                      params->same_vspace ? &server_thread : &server_process, params->threshold);
 
             if (end > start) {
                 results->benchmarks[j][i] = end - start;

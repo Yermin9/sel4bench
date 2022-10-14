@@ -48,6 +48,7 @@ static json_t *process_ipc_results(void *r)
     json_int_t server_prios[n];
     bool same_vspace[n];
     json_int_t length[n];
+    json_int_t threshold[n];
 
     column_t extra_cols[] = {
         {
@@ -79,6 +80,11 @@ static json_t *process_ipc_results(void *r)
             .header = "IPC length",
             .type = JSON_INTEGER,
             .integer_array = &length[0]
+        },
+        {
+            .header = "Endpoint Threshold",
+            .type = JSON_INTEGER,
+            .integer_array = &threshold[0]
         }
     };
 
@@ -106,6 +112,7 @@ static json_t *process_ipc_results(void *r)
         server_prios[i] = benchmark_params[i].server_prio;
         same_vspace[i] = benchmark_params[i].same_vspace;
         length[i] = benchmark_params[i].length;
+        threshold[i] = benchmark_params[i].threshold;
 
         results[i] = process_result(RUNS, raw_results->benchmarks[i], desc);
     }

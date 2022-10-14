@@ -61,6 +61,9 @@ typedef struct benchmark_params {
     enum overheads overhead_id;
     /* if CONFIG_KERNEL_MCS, should the server be passive? */
     bool passive;
+
+    /* Threshold to be set on the endpoint */
+    uint64_t threshold;
 } benchmark_params_t;
 
 struct overhead_benchmark_params {
@@ -82,6 +85,7 @@ static const benchmark_params_t benchmark_params[] = {
         .length = 0,
         .overhead_id = CALL_OVERHEAD,
         .passive = true,
+        .threshold = 0,
     },
     /* ReplyRecv fastpath between server and client in the same address space */
     {
@@ -95,6 +99,7 @@ static const benchmark_params_t benchmark_params[] = {
         .length = 0,
         .overhead_id = REPLY_RECV_OVERHEAD,
         .passive = true,
+        .threshold = 0,
     },
     /* Call fastpath between client and server in different address spaces */
     {
@@ -108,6 +113,7 @@ static const benchmark_params_t benchmark_params[] = {
         .length = 0,
         .overhead_id = CALL_OVERHEAD,
         .passive = true,
+        .threshold = 0,
     },
     /* ReplyRecv fastpath between server and client in different address spaces */
     {
@@ -121,6 +127,7 @@ static const benchmark_params_t benchmark_params[] = {
         .length = 0,
         .overhead_id = REPLY_RECV_OVERHEAD,
         .passive = true,
+        .threshold = 0,
     },
     /* Send slowpath (no fastpath for send) same prio client-server, different address space */
     {
@@ -132,7 +139,8 @@ static const benchmark_params_t benchmark_params[] = {
         .client_prio = seL4_MaxPrio - 2,
         .server_prio = seL4_MaxPrio - 1,
         .length = 0,
-        .overhead_id = SEND_OVERHEAD
+        .overhead_id = SEND_OVERHEAD,
+        .threshold = 0,
     },
     /* Call slowpath, long IPC (10), same prio client to server, different address space */
     {
@@ -144,7 +152,8 @@ static const benchmark_params_t benchmark_params[] = {
         .client_prio = seL4_MaxPrio - 1,
         .server_prio = seL4_MaxPrio - 1,
         .length = 10,
-        .overhead_id = CALL_10_OVERHEAD
+        .overhead_id = CALL_10_OVERHEAD,
+        .threshold = 0,
     },
     /* ReplyRecv slowpath, long IPC (10), same prio server to client, on the slowpath, different address space */
     {
@@ -156,8 +165,23 @@ static const benchmark_params_t benchmark_params[] = {
         .client_prio = seL4_MaxPrio - 1,
         .server_prio = seL4_MaxPrio - 1,
         .length = 10,
-        .overhead_id = REPLY_RECV_10_OVERHEAD
-    }
+        .overhead_id = REPLY_RECV_10_OVERHEAD,
+        .threshold = 0,
+    },
+    /* Call fastpath between client and server in the same address space, with a small threshold set */
+    // {
+    //     .name        = "seL4_Call",
+    //     .direction   = DIR_TO,
+    //     .client_fn   = IPC_CALL_FUNC2,
+    //     .server_fn   = IPC_REPLYRECV_FUNC2,
+    //     .same_vspace = true,
+    //     .client_prio = seL4_MaxPrio - 1,
+    //     .server_prio = seL4_MaxPrio - 1,
+    //     .length = 0,
+    //     .overhead_id = CALL_OVERHEAD,
+    //     .passive = true,
+    //     .threshold = 0,
+    // },
 };
 
 static const struct overhead_benchmark_params overhead_benchmark_params[] = {
