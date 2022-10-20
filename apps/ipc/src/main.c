@@ -338,19 +338,21 @@ void run_bench(env_t *env, cspacepath_t result_ep_path, cspacepath_t ep_path,
     }
     /* Set the threshold */
     if (config_set(CONFIG_KERNEL_IPCTHRESHOLDS)) {
-        error = seL4_CNode_Endpoint_SetThreshold(ep_path.root, ep_path.capPtr, ep_path.capDepth, threshold);     
+        error = seL4_CNode_Endpoint_SetThreshold(ep_path.root, ep_path.capPtr, ep_path.capDepth, threshold);
         ZF_LOGF_IF(error, "Failed to set endpoint threshold\n");
     }
 
+    api_sched_ctrl_configure(simple_get_sched_ctrl(&env->simple, 0), client->process.thread.sched_context.cptr,
+                            800 * US_IN_S, 800 * US_IN_S,
+                                5, 0);
+ 
     if (threshold==0 || !config_set(CONFIG_KERNEL_IPCTHRESHOLDS)) {
         error = benchmark_spawn_process(&client->process, &env->slab_vka, &env->vspace, NUM_ARGS, client->argv, 1);
         ZF_LOGF_IF(error, "Failed to spawn client\n");
     } else {
         error = benchmark_spawn_process(&client->process, &env->slab_vka, &env->vspace, NUM_ARGS, client->argv, 0);
         /* Alter the SC parameters */
-        api_sched_ctrl_configure(simple_get_sched_ctrl(&env->simple, 0), client->process.thread.sched_context.cptr,
-                                    1000, 2000,
-                                        5, 0);
+
 
                                         
         seL4_TCB_Resume(client->process.thread.tcb.cptr);
@@ -395,6 +397,18 @@ void CONSTRUCTOR(MUSLCSYS_WITH_VSYSCALL_PRIORITY) init_env(void)
               object_freq
           );
 }
+
+
+void run_threshold_test(env_t * env) {
+        /* Do threshold deferment tests here */
+    /* Create client, server and low_prio */
+
+
+
+    /* Pass arguments */
+    // sel4utils_create_word_args()
+}
+
 
 int main(int argc, char **argv)
 {
@@ -484,14 +498,100 @@ int main(int argc, char **argv)
         }
     }
 
+
+
+
+/* TODO, working here */
+
+    int error;
+    helper_thread_t client_t, server_thread_t, low_prio_t;
+    benchmark_shallow_clone_process(env, &client_t.process, 15, 0, "client");
+    benchmark_shallow_clone_process(env, &server_thread_t.process, 20, 0, "server process");
+    benchmark_shallow_clone_process(env, &low_prio_t.process, 10, 0, "low_prio process");
+
+
+    /* Create the call endpoint */
+    vka_object_t call_ep, return_ep, high_low_ep;
+    cspacepath_t call_ep_path, return_ep_path, high_low_ep_path;
+    if (vka_alloc_endpoint(&env->slab_vka, &call_ep) != 0) {
+        ZF_LOGF("Failed to allocate endpoint");
+    }
+    vka_cspace_make_path(&env->slab_vka, ep.cptr, &ep_path);
+
+    /* Create a result endpoint */
+    if (vka_alloc_endpoint(&env->slab_vka, &return_ep) != 0) {
+        ZF_LOGF("Failed to allocate endpoint");
+    }
+    vka_cspace_make_path(&env->slab_vka, ep.cptr, &ep_path);
+
+    /* Create a high_low endpoint */
+    if (vka_alloc_endpoint(&env->slab_vka, &high_low_ep) != 0) {
+        ZF_LOGF("Failed to allocate endpoint");
+    }
+    vka_cspace_make_path(&env->slab_vka, ep.cptr, &high_low_ep_path);
+
+    
+    client_t.ep = sel4utils_copy_path_to_process(&client_t.process, ep_path);
+    client_t.result_ep = sel4utils_copy_path_to_process(&client_t.process, return_ep_path);
+    server_thread_t.ep = sel4utils_copy_path_to_process(&server_thread_t.process, ep_path);
+    server_thread_t.result_ep = sel4utils_copy_path_to_process(&server_thread_t.process, return_ep_path);
+
+
+
+    sel4utils_create_word_args(client.argv_strings, client.argv, NUM_ARGS, client_t.ep, client_t.result_ep, 0);
+    sel4utils_create_word_args(server_thread_t.argv_strings, server_thread_t.argv, NUM_ARGS,
+                               server_thread_t.ep, server_thread_t.result_ep, SEL4UTILS_REPLY_SLOT);
+
+
+    for (int i = 0; i < RUNS; i++) {
+
+        /* Set EP Threshold on call_endpoint */
+        error = seL4_CNode_Endpoint_SetThreshold(ep_path.root, ep_path.capPtr, ep_path.capDepth, 800*US_IN_MS);
+        ZF_LOGF_IF(error, "Failed to set threshold\n");
+    }
+
+
+    // run_threshold_test();
+
+
     /* done -> results are stored in shared memory so we can now return */
     benchmark_finished(EXIT_SUCCESS);
     return 0;
 }
 
 
+seL4_Word threshold_defer_call(int argc, char *argv[]) {
+    uint32_t i;
+
+    seL4_CPtr ep = atoi(argv[0]);
+    seL4_CPtr result_ep = atoi(argv[1]);
+
+    for (i = 0; i < WARMUPS; i++) {
+        /* Signal low_prio */
+        /* READ_COUNTER_BEFORE() */
+        /* CALL */
+    }
+}
 
 
+seL4_Word threshold_defer_recv(int argc, char *argv[]) {
+    uint32_t i;
+
+    seL4_CPtr ep = atoi(argv[0]);
+    seL4_CPtr result_ep = atoi(argv[1]);
+    for (i = 0; i < WARMUPS; i++) {
+        /* ReplyRecv */
+    }
+}
+
+seL4_Word threshold_defer_low_prio(int argc, char *argv[]) {
+    uint32_t i;
+
+    for (i = 0; i < WARMUPS; i++) {
+        /* Wait for client to signal us */
+        /* READ_COUNTER_AFTER() */
+    }
+}
 
 
 

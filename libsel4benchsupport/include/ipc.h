@@ -168,20 +168,35 @@ static const benchmark_params_t benchmark_params[] = {
         .overhead_id = REPLY_RECV_10_OVERHEAD,
         .threshold = 0,
     },
+#ifdef CONFIG_KERNEL_IPCTHRESHOLDS
     /* Call fastpath between client and server in the same address space, with a small threshold set */
-    // {
-    //     .name        = "seL4_Call",
-    //     .direction   = DIR_TO,
-    //     .client_fn   = IPC_CALL_FUNC2,
-    //     .server_fn   = IPC_REPLYRECV_FUNC2,
-    //     .same_vspace = true,
-    //     .client_prio = seL4_MaxPrio - 1,
-    //     .server_prio = seL4_MaxPrio - 1,
-    //     .length = 0,
-    //     .overhead_id = CALL_OVERHEAD,
-    //     .passive = true,
-    //     .threshold = 0,
-    // },
+    {
+        .name        = "seL4_Call_with_threshold",
+        .direction   = DIR_TO,
+        .client_fn   = IPC_CALL_FUNC2,
+        .server_fn   = IPC_REPLYRECV_FUNC2,
+        .same_vspace = true,
+        .client_prio = seL4_MaxPrio - 1,
+        .server_prio = seL4_MaxPrio - 1,
+        .length = 0,
+        .overhead_id = CALL_OVERHEAD,
+        .passive = true,
+        .threshold = 1,
+    },
+    /* Call slowpath between client and server in the same address space, with a small threshold set */
+    {
+        .name        = "seL4_Call_slowpath_with_threshold",
+        .direction   = DIR_TO,
+        .client_fn   = IPC_CALL_10_FUNC2,
+        .server_fn   = IPC_REPLYRECV_10_FUNC2,
+        .same_vspace = false,
+        .client_prio = seL4_MaxPrio - 1,
+        .server_prio = seL4_MaxPrio - 1,
+        .length = 10,
+        .overhead_id = CALL_10_OVERHEAD,
+        .threshold = 1,
+    },
+#endif
 };
 
 static const struct overhead_benchmark_params overhead_benchmark_params[] = {
