@@ -401,36 +401,51 @@ void CONSTRUCTOR(MUSLCSYS_WITH_VSYSCALL_PRIORITY) init_env(void)
 seL4_Word threshold_defer_call(int argc, char *argv[]) {
     uint32_t i;
 
-    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 0);
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 10);
 
     seL4_CPtr ep = atoi(argv[0]);
     seL4_CPtr result_ep = atoi(argv[1]);
     seL4_CPtr high_low_ep = atoi(argv[2]);
     seL4_CPtr sched_context = atoi(argv[3]);
 
-    ccnt_t start;
-    ZF_LOGD("Client starting\n");
+    ccnt_t start=0;
+
 
     /* Wakeup low_prio initially */
+    // seL4_Debug_PutChar('C');
     seL4_Send(high_low_ep, tag);
 
-    for (i = 0; i < WARMUPS; i++) {
-        /* Wakeup low_prio */
-        seL4_Send(high_low_ep, tag);
+    for (i = 0; i < 1; i++) {
+
+        
 
         /* Burn some budget */
-        seL4_Time consumed = 0;
-        while(consumed < 300 * US_IN_MS) {
+        COMPILER_MEMORY_FENCE();
+        // seL4_Time consumed = 0;
+        // while(consumed < 50*US_IN_MS) {
+        // while(consumed < 50000) {
+            volatile long int j=0;
+            while(j<35000000) {
+                j+=1;
+            }
             /* Our max budget is 600 and threshold is 500, so burn 300 budget  */
-            seL4_SchedContext_Consumed_t consumed_budget = seL4_SchedContext_Consumed(sched_context);
-            consumed += consumed_budget.consumed;
-        }
-
-        READ_COUNTER_BEFORE(start);
+            // seL4_SchedContext_Consumed_t consumed_budget = seL4_SchedContext_Consumed(sched_context);
+            // consumed += consumed_budget.consumed;
+            // send_result(result_ep, consumed);
+        // }
+        COMPILER_MEMORY_FENCE();
+        
+        /* Wakeup low_prio */
+        seL4_Send(high_low_ep, tag);
+        
          /* CALL */
-        DO_REAL_CALL(ep, tag);
+        // DO_REAL_CALL(ep, tag);
+        READ_COUNTER_BEFORE(start);
+        seL4_Call(ep,tag);
+        // seL4_Yield();
+        COMPILER_MEMORY_FENCE();
     }
-    printf("Client returning\n");
+    
 
     /* Send 'start' back*/
     send_result(result_ep, start);
@@ -453,6 +468,7 @@ seL4_Word threshold_defer_recv(int argc, char *argv[]) {
         /* ReplyRecv */
         seL4_ReplyRecv(ep, tag, NULL, reply);
     }
+
 }
 
 seL4_Word threshold_defer_low_prio(int argc, char *argv[]) {
@@ -463,23 +479,25 @@ seL4_Word threshold_defer_low_prio(int argc, char *argv[]) {
 
     seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 0);
 
-    ccnt_t end;
-    printf("Low prio starting\n");
+    ccnt_t end=0;
+    
     /* Notify the initialiser that we are ready, then wait */
     seL4_NBSendRecv(result_ep, tag, high_low_ep, NULL, reply);
 
-    for (i = 0; i < WARMUPS; i++) {
+    for (i = 0; i < 1; i++) {
         /* Wait for client to signal us */
         seL4_Wait(high_low_ep, NULL);
         /* We will be runnable, but preempted. */
         /* Once client blocks due to threshold, read the counter */
-
+        COMPILER_MEMORY_FENCE();
         READ_COUNTER_AFTER(end);
+        COMPILER_MEMORY_FENCE();
     }
-    printf("Low prio returning\n");
 
-    send_result(result_ep, end);
+
     /* Send 'end' back */
+    send_result(result_ep, end);
+
 }
 
 int main(int argc, char **argv)
@@ -577,7 +595,32 @@ int main(int argc, char **argv)
 
 /* TODO, working here */
 #ifdef CONFIG_KERNEL_IPCTHRESHOLDS
+    printf("Starting threshold tests.\n");
     int error;
+
+
+    /* Create the call endpoint */
+    vka_object_t call_ep, return_ep, high_low_ep;
+    cspacepath_t call_ep_path, return_ep_path, high_low_ep_path;
+    if (vka_alloc_endpoint(&env->slab_vka, &call_ep) != 0) {
+        ZF_LOGF("Failed to allocate endpoint");
+    }
+    vka_cspace_make_path(&env->slab_vka, call_ep.cptr, &call_ep_path);
+
+    /* Create a result endpoint */
+    if (vka_alloc_endpoint(&env->slab_vka, &return_ep) != 0) {
+        ZF_LOGF("Failed to allocate endpoint");
+    }
+    vka_cspace_make_path(&env->slab_vka, return_ep.cptr, &return_ep_path);
+
+    /* Create a high_low endpoint */
+    if (vka_alloc_endpoint(&env->slab_vka, &high_low_ep) != 0) {
+        ZF_LOGF("Failed to allocate endpoint");
+    }
+    vka_cspace_make_path(&env->slab_vka, high_low_ep.cptr, &high_low_ep_path);
+
+
+
     helper_thread_t client_t, server_thread_t, low_prio_t;
     benchmark_shallow_clone_process(env, &client_t.process, 15, 0, "client");
     benchmark_shallow_clone_process(env, &server_thread_t.process, 20, 0, "server process");
@@ -587,26 +630,6 @@ int main(int argc, char **argv)
     server_thread_t.process.entry_point = threshold_defer_recv;
     low_prio_t.process.entry_point = threshold_defer_low_prio;
 
-
-    /* Create the call endpoint */
-    vka_object_t call_ep, return_ep, high_low_ep;
-    cspacepath_t call_ep_path, return_ep_path, high_low_ep_path;
-    if (vka_alloc_endpoint(&env->slab_vka, &call_ep) != 0) {
-        ZF_LOGF("Failed to allocate endpoint");
-    }
-    vka_cspace_make_path(&env->slab_vka, ep.cptr, &call_ep_path);
-
-    /* Create a result endpoint */
-    if (vka_alloc_endpoint(&env->slab_vka, &return_ep) != 0) {
-        ZF_LOGF("Failed to allocate endpoint");
-    }
-    vka_cspace_make_path(&env->slab_vka, ep.cptr, &return_ep_path);
-
-    /* Create a high_low endpoint */
-    if (vka_alloc_endpoint(&env->slab_vka, &high_low_ep) != 0) {
-        ZF_LOGF("Failed to allocate endpoint");
-    }
-    vka_cspace_make_path(&env->slab_vka, ep.cptr, &high_low_ep_path);
 
     cspacepath_t client_t_sc_path;
     /* Make path to client SC */
@@ -627,6 +650,7 @@ int main(int argc, char **argv)
 
     sel4utils_create_word_args(client_t.argv_strings, client_t.argv, 4, 
                             client_t.ep, client_t.result_ep, client_t_highlow, client_t_sc);
+
     sel4utils_create_word_args(server_thread_t.argv_strings, server_thread_t.argv, NUM_ARGS,
                                server_thread_t.ep, server_thread_t.result_ep, SEL4UTILS_REPLY_SLOT);
 
@@ -638,21 +662,27 @@ int main(int argc, char **argv)
         if(params->threshold_defer) {
             for (int i = 0; i < RUNS; i++) {
 
+                timing_init();
+
                 /* Set EP Threshold on call_endpoint */
-                error = seL4_CNode_Endpoint_SetThreshold(ep_path.root, ep_path.capPtr, ep_path.capDepth, 500*US_IN_MS);
+                error = seL4_CNode_Endpoint_SetThreshold(call_ep_path.root, call_ep_path.capPtr, call_ep_path.capDepth, 150*US_IN_MS);
                 ZF_LOGF_IF(error, "Failed to set threshold\n");
 
 
                 /* Start low_prio */
+                printf("Starting low prio.\n");
                 int error = benchmark_spawn_process(&(low_prio_t.process), &env->slab_vka, &env->vspace, NUM_ARGS,
                                             low_prio_t.argv, 1);
                 ZF_LOGF_IF(error, "Failed to start low prio");
 
+                
                 /* Wait for it to tell us its initialised */
+                printf("Waiting for low prio.\n");
                 seL4_Wait(return_ep_path.capPtr, NULL);
 
 
                 /* Start the server */
+                printf("Starting server.\n");
                 error = benchmark_spawn_process(&(server_thread_t.process), &env->slab_vka, &env->vspace, NUM_ARGS,
                                     server_thread_t.argv, 1);
                 ZF_LOGF_IF(error, "Failed to start server");
@@ -667,13 +697,21 @@ int main(int argc, char **argv)
 
 
 
+                error = api_sc_unbind_object(client_t.process.thread.sched_context.cptr,
+                                                client_t.process.thread.tcb.cptr);
+
+
                 /* Set clients SC properties */
                 api_sched_ctrl_configure(simple_get_sched_ctrl(&env->simple, 0), client_t.process.thread.sched_context.cptr,
-                                600 * US_IN_S, 1000 * US_IN_S,
+                                250 * US_IN_MS, 500 * US_IN_MS,
                                     0, 0);
+
+                error = api_sc_bind(client_t.process.thread.sched_context.cptr,
+                                                client_t.process.thread.tcb.cptr);
 
 
                 /* Start client */
+                printf("Starting client.\n");
                 error = benchmark_spawn_process(&(client_t.process), &env->slab_vka, &env->vspace, 4, client_t.argv, 1);
                 ZF_LOGF_IF(error, "Failed to spawn client\n");
 
@@ -681,21 +719,34 @@ int main(int argc, char **argv)
 
 
                 /* get results */
+
                 ccnt_t ret1 = get_result(return_ep_path.capPtr);
+                printf("Got result1 %llu\n", ret1);
+
+
 
                 ccnt_t ret2 = get_result(return_ep_path.capPtr);
-
+                printf("Got result2 %lu\n", ret2);
 
                 if (ret1 > ret2) {
-                    results->benchmarks[j][i] = end - start;
+                    results->benchmarks[j][i] = ret1 - ret2;
                 } else {
-                    results->benchmarks[j][i] = start - end;
+                    results->benchmarks[j][i] = ret2 - ret1;
                 }
+
+
+                // Bind SC to server
+
+                error = api_sc_bind(server_thread_t.process.thread.sched_context.cptr,
+                                server_thread_t.process.thread.tcb.cptr);
+
 
                 /* clean up - clean server first in case it is sharing the client's cspace and vspace */
                 seL4_TCB_Suspend(client_t.process.thread.tcb.cptr);
                 seL4_TCB_Suspend(server_thread_t.process.thread.tcb.cptr);
                 seL4_TCB_Suspend(low_prio_t.process.thread.tcb.cptr);
+
+                timing_destroy();
             }
         }
     }
@@ -735,3 +786,4 @@ int main(int argc, char **argv)
 //                /* depth */         src->capDepth
 //            );
 // }
+
