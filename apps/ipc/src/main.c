@@ -401,12 +401,11 @@ void CONSTRUCTOR(MUSLCSYS_WITH_VSYSCALL_PRIORITY) init_env(void)
 seL4_Word threshold_defer_call(int argc, char *argv[]) {
     uint32_t i;
 
-    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 10);
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 0);
 
     seL4_CPtr ep = atoi(argv[0]);
     seL4_CPtr result_ep = atoi(argv[1]);
     seL4_CPtr high_low_ep = atoi(argv[2]);
-    seL4_CPtr sched_context = atoi(argv[3]);
 
     ccnt_t start=0;
 
@@ -415,7 +414,7 @@ seL4_Word threshold_defer_call(int argc, char *argv[]) {
     // seL4_Debug_PutChar('C');
     seL4_Send(high_low_ep, tag);
 
-    for (i = 0; i < 1; i++) {
+    for (i = 0; i < 3; i++) {
 
         
 
@@ -442,13 +441,14 @@ seL4_Word threshold_defer_call(int argc, char *argv[]) {
         // DO_REAL_CALL(ep, tag);
         READ_COUNTER_BEFORE(start);
         seL4_Call(ep,tag);
-        // seL4_Yield();
         COMPILER_MEMORY_FENCE();
     }
     
 
     /* Send 'start' back*/
     send_result(result_ep, start);
+
+    while (1) {}
 }
 
 
@@ -468,7 +468,8 @@ seL4_Word threshold_defer_recv(int argc, char *argv[]) {
         /* ReplyRecv */
         seL4_ReplyRecv(ep, tag, NULL, reply);
     }
-
+    
+    while (1) {}
 }
 
 seL4_Word threshold_defer_low_prio(int argc, char *argv[]) {
@@ -484,7 +485,7 @@ seL4_Word threshold_defer_low_prio(int argc, char *argv[]) {
     /* Notify the initialiser that we are ready, then wait */
     seL4_NBSendRecv(result_ep, tag, high_low_ep, NULL, reply);
 
-    for (i = 0; i < 1; i++) {
+    for (i = 0; i < 3; i++) {
         /* Wait for client to signal us */
         seL4_Wait(high_low_ep, NULL);
         /* We will be runnable, but preempted. */
@@ -498,6 +499,7 @@ seL4_Word threshold_defer_low_prio(int argc, char *argv[]) {
     /* Send 'end' back */
     send_result(result_ep, end);
 
+    while (1) {}
 }
 
 int main(int argc, char **argv)
@@ -648,8 +650,8 @@ int main(int argc, char **argv)
     seL4_CPtr low_prio_t_highlow = sel4utils_copy_path_to_process(&low_prio_t.process, high_low_ep_path);
 
 
-    sel4utils_create_word_args(client_t.argv_strings, client_t.argv, 4, 
-                            client_t.ep, client_t.result_ep, client_t_highlow, client_t_sc);
+    sel4utils_create_word_args(client_t.argv_strings, client_t.argv, 3, 
+                            client_t.ep, client_t.result_ep, client_t_highlow);
 
     sel4utils_create_word_args(server_thread_t.argv_strings, server_thread_t.argv, NUM_ARGS,
                                server_thread_t.ep, server_thread_t.result_ep, SEL4UTILS_REPLY_SLOT);
@@ -712,7 +714,7 @@ int main(int argc, char **argv)
 
                 /* Start client */
                 printf("Starting client.\n");
-                error = benchmark_spawn_process(&(client_t.process), &env->slab_vka, &env->vspace, 4, client_t.argv, 1);
+                error = benchmark_spawn_process(&(client_t.process), &env->slab_vka, &env->vspace, 3, client_t.argv, 1);
                 ZF_LOGF_IF(error, "Failed to spawn client\n");
 
 
