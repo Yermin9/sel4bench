@@ -336,11 +336,13 @@ void run_bench(env_t *env, cspacepath_t result_ep_path, cspacepath_t ep_path,
             ZF_LOGF_IF(error, "Failed to convert server to passive");
         }
     }
+    #if defined(CONFIG_KERNEL_IPCTHRESHOLDS) && defined(CONFIG_KERNEL_MCS)
     /* Set the threshold */
     if (config_set(CONFIG_KERNEL_IPCTHRESHOLDS)) {
         error = seL4_CNode_Endpoint_SetThreshold(ep_path.root, ep_path.capPtr, ep_path.capDepth, threshold);
         ZF_LOGF_IF(error, "Failed to set endpoint threshold\n");
     }
+    #endif
 
     api_sched_ctrl_configure(simple_get_sched_ctrl(&env->simple, 0), client->process.thread.sched_context.cptr,
                             800 * US_IN_S, 800 * US_IN_S,
@@ -398,6 +400,7 @@ void CONSTRUCTOR(MUSLCSYS_WITH_VSYSCALL_PRIORITY) init_env(void)
           );
 }
 
+#if defined(CONFIG_KERNEL_IPCTHRESHOLDS) && defined(CONFIG_KERNEL_MCS)
 seL4_Word threshold_defer_call(int argc, char *argv[]) {
     uint32_t i;
 
@@ -502,6 +505,8 @@ seL4_Word threshold_defer_low_prio(int argc, char *argv[]) {
     while (1) {}
 }
 
+#endif
+
 int main(int argc, char **argv)
 {
     vka_object_t ep, result_ep;
@@ -596,7 +601,7 @@ int main(int argc, char **argv)
 
 
 /* TODO, working here */
-#ifdef CONFIG_KERNEL_IPCTHRESHOLDS
+#if defined(CONFIG_KERNEL_IPCTHRESHOLDS) && defined(CONFIG_KERNEL_MCS)
     printf("Starting threshold tests.\n");
     int error;
 
