@@ -426,10 +426,22 @@ seL4_Word threshold_defer_call(int argc, char *argv[]) {
         // seL4_Time consumed = 0;
         // while(consumed < 50*US_IN_MS) {
         // while(consumed < 50000) {
-            volatile long int j=0;
-            while(j<35000000) {
-                j+=1;
-            }
+        int i =10;
+
+        volatile long int j=0;
+        while (i<10) {
+            seL4_TestingDefer(12*US_IN_MS);
+            // seL4_YieldUntilBudget(2*US_IN_MS);
+            // seL4_Yield();
+            // j=0;
+            // while(j<1750000) {
+            //     j+=1;
+            // } 
+            i=i+1;
+        }
+            // while(j<35000000) {
+            //     j+=1;
+            // }
             /* Our max budget is 600 and threshold is 500, so burn 300 budget  */
             // seL4_SchedContext_Consumed_t consumed_budget = seL4_SchedContext_Consumed(sched_context);
             // consumed += consumed_budget.consumed;
@@ -711,7 +723,7 @@ int main(int argc, char **argv)
                 /* Set clients SC properties */
                 api_sched_ctrl_configure(simple_get_sched_ctrl(&env->simple, 0), client_t.process.thread.sched_context.cptr,
                                 250 * US_IN_MS, 500 * US_IN_MS,
-                                    0, 0);
+                                    20, 0);
 
                 error = api_sc_bind(client_t.process.thread.sched_context.cptr,
                                                 client_t.process.thread.tcb.cptr);
@@ -728,7 +740,7 @@ int main(int argc, char **argv)
                 /* get results */
 
                 ccnt_t ret1 = get_result(return_ep_path.capPtr);
-                printf("Got result1 %llu\n", ret1);
+                printf("Got result1 %lu\n", ret1);
 
 
 
