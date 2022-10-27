@@ -417,7 +417,7 @@ seL4_Word threshold_defer_call_fp(int argc, char *argv[]) {
     // seL4_Debug_PutChar('C');
     seL4_Send(high_low_ep, tag);
 
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < 3; i++) {
 
         
 
@@ -464,7 +464,7 @@ seL4_Word threshold_defer_call_sp(int argc, char *argv[]) {
     // seL4_Debug_PutChar('C');
     seL4_Send(high_low_ep, tag);
 
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < 3; i++) {
 
         
 
@@ -544,6 +544,59 @@ seL4_Word threshold_defer_low_prio(int argc, char *argv[]) {
     send_result(result_ep, end);
 
     while (1) {}
+}
+
+
+
+
+seL4_Word ipc_block_caller(int argc, char *argv[]) {
+    seL4_CPtr ep = atoi(argv[0]);
+    seL4_CPtr result_ep = atoi(argv[1]);
+    seL4_CPtr high_low_ep = atoi(argv[2]);
+
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 10);
+
+
+    ccnt_t start=0;
+
+    seL4_Send(high_low_ep, tag);
+
+    int i=0;
+    for (i = 0; i < 2; i++) {
+        /* Signal low prio */
+        
+        READ_COUNTER_BEFORE(start);
+        seL4_Call(high_low_ep,tag);
+    }
+
+    send_result(result_ep, start);
+
+}
+seL4_Word ipc_block_low_prio(int argc, char *argv[]) {
+    seL4_CPtr result_ep = atoi(argv[0]);
+    seL4_CPtr high_low_ep = atoi(argv[1]);
+    seL4_CPtr reply = atoi(argv[2]);
+
+    ccnt_t end=0;
+
+
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 0);
+    
+    /* Notify the initialiser that we are ready, then wait */
+    seL4_NBSendRecv(result_ep, tag, high_low_ep, NULL, reply);
+
+
+    int i=0;
+    for (i = 0; i < 2; i++) {
+
+        READ_COUNTER_AFTER(end);
+
+        // Recv the client
+        seL4_Recv(high_low_ep, NULL, reply);
+        seL4_Send(reply, tag);
+    }
+
+    send_result(result_ep, end);
 }
 
 #endif
@@ -677,6 +730,7 @@ int main(int argc, char **argv)
     
     server_thread_t.process.entry_point = threshold_defer_recv;
     low_prio_t.process.entry_point = threshold_defer_low_prio;
+    client_t.process.entry_point = threshold_defer_call_fp;
 
 
     cspacepath_t client_t_sc_path;
@@ -711,100 +765,148 @@ int main(int argc, char **argv)
 
             switch(params->client_fn) {
                 case IPC_CALL_FUNC:
+                    printf("Op1");
                     client_t.process.entry_point = threshold_defer_call_fp;
                     break;
                 case IPC_CALL_FUNC2:
+                    printf("Op2");
                     client_t.process.entry_point = threshold_defer_call_sp;
                     break;
             }
+            if (params->ep_block) {
+                for (int i = 0; i < RUNS; i++) {
 
-            for (int i = 0; i < RUNS; i++) {
+                    timing_init();
 
-                timing_init();
+                    client_t.process.entry_point = ipc_block_caller;
+                    low_prio_t.process.entry_point = ipc_block_low_prio;
 
-                /* Set EP Threshold on call_endpoint */
-                error = seL4_CNode_Endpoint_SetThreshold(call_ep_path.root, call_ep_path.capPtr, call_ep_path.capDepth, 150*US_IN_MS);
-                ZF_LOGF_IF(error, "Failed to set threshold\n");
+                    /* Start low_prio */
+                    printf("Starting low prio.\n");
+                    int error = benchmark_spawn_process(&(low_prio_t.process), &env->slab_vka, &env->vspace, NUM_ARGS,
+                                                low_prio_t.argv, 1);
+                    ZF_LOGF_IF(error, "Failed to start low prio");
 
-
-                /* Start low_prio */
-                printf("Starting low prio.\n");
-                int error = benchmark_spawn_process(&(low_prio_t.process), &env->slab_vka, &env->vspace, NUM_ARGS,
-                                            low_prio_t.argv, 1);
-                ZF_LOGF_IF(error, "Failed to start low prio");
-
-                
-                /* Wait for it to tell us its initialised */
-                printf("Waiting for low prio.\n");
-                seL4_Wait(return_ep_path.capPtr, NULL);
+                    /* Wait for it to   tell us its initialised */
+                    printf("Waiting for low prio.\n");
+                    seL4_Wait(return_ep_path.capPtr, NULL);
 
 
-                /* Start the server */
-                printf("Starting server.\n");
-                error = benchmark_spawn_process(&(server_thread_t.process), &env->slab_vka, &env->vspace, NUM_ARGS,
-                                    server_thread_t.argv, 1);
-                ZF_LOGF_IF(error, "Failed to start server");
+                    /* Start client */
+                    printf("Starting client.\n");
+                    error = benchmark_spawn_process(&(client_t.process), &env->slab_vka, &env->vspace, 3, client_t.argv, 1);
+                    ZF_LOGF_IF(error, "Failed to spawn client\n");
 
-                /* wait for server to tell us its initialised */
-                seL4_Wait(return_ep_path.capPtr, NULL);
-
-                /* convert server to passive */
-                error = api_sc_unbind_object(server_thread_t.process.thread.sched_context.cptr,
-                                                server_thread_t.process.thread.tcb.cptr);
-                ZF_LOGF_IF(error, "Failed to convert server to passive");
+                    ccnt_t ret1 = get_result(return_ep_path.capPtr);
+                    printf("Got result1 %lu\n", ret1);
 
 
 
-                error = api_sc_unbind_object(client_t.process.thread.sched_context.cptr,
-                                                client_t.process.thread.tcb.cptr);
+                    ccnt_t ret2 = get_result(return_ep_path.capPtr);
+                    printf("Got result2 %lu\n", ret2);
+
+                    if (ret1 > ret2) {
+                        results->benchmarks[j][i] = ret1 - ret2;
+                    } else {
+                        results->benchmarks[j][i] = ret2 - ret1;
+                    }
+
+                    seL4_TCB_Suspend(client_t.process.thread.tcb.cptr);
+                    seL4_TCB_Suspend(server_thread_t.process.thread.tcb.cptr);
+                    seL4_TCB_Suspend(low_prio_t.process.thread.tcb.cptr);
+
+                    timing_destroy();
+                }  
+            }
+            else {
+                for (int i = 0; i < RUNS; i++) {
+
+                    timing_init();
+
+                    /* Set EP Threshold on call_endpoint */
+                    error = seL4_CNode_Endpoint_SetThreshold(call_ep_path.root, call_ep_path.capPtr, call_ep_path.capDepth, 150*US_IN_MS);
+                    ZF_LOGF_IF(error, "Failed to set threshold\n");
 
 
-                /* Set clients SC properties */
-                api_sched_ctrl_configure(simple_get_sched_ctrl(&env->simple, 0), client_t.process.thread.sched_context.cptr,
-                                250 * US_IN_MS, 350 * US_IN_MS,
-                                    20, 0);
+                    /* Start low_prio */
+                    printf("Starting low prio.\n");
+                    int error = benchmark_spawn_process(&(low_prio_t.process), &env->slab_vka, &env->vspace, NUM_ARGS,
+                                                low_prio_t.argv, 1);
+                    ZF_LOGF_IF(error, "Failed to start low prio");
 
-                error = api_sc_bind(client_t.process.thread.sched_context.cptr,
-                                                client_t.process.thread.tcb.cptr);
-
-
-                /* Start client */
-                printf("Starting client.\n");
-                error = benchmark_spawn_process(&(client_t.process), &env->slab_vka, &env->vspace, 3, client_t.argv, 1);
-                ZF_LOGF_IF(error, "Failed to spawn client\n");
+                    
+                    /* Wait for it to tell us its initialised */
+                    printf("Waiting for low prio.\n");
+                    seL4_Wait(return_ep_path.capPtr, NULL);
 
 
+                    /* Start the server */
+                    printf("Starting server.\n");
+                    error = benchmark_spawn_process(&(server_thread_t.process), &env->slab_vka, &env->vspace, NUM_ARGS,
+                                        server_thread_t.argv, 1);
+                    ZF_LOGF_IF(error, "Failed to start server");
+
+                    /* wait for server to tell us its initialised */
+                    seL4_Wait(return_ep_path.capPtr, NULL);
+
+                    /* convert server to passive */
+                    error = api_sc_unbind_object(server_thread_t.process.thread.sched_context.cptr,
+                                                    server_thread_t.process.thread.tcb.cptr);
+                    ZF_LOGF_IF(error, "Failed to convert server to passive");
 
 
-                /* get results */
 
-                ccnt_t ret1 = get_result(return_ep_path.capPtr);
-                printf("Got result1 %lu\n", ret1);
-
+                    error = api_sc_unbind_object(client_t.process.thread.sched_context.cptr,
+                                                    client_t.process.thread.tcb.cptr);
 
 
-                ccnt_t ret2 = get_result(return_ep_path.capPtr);
-                printf("Got result2 %lu\n", ret2);
+                    /* Set clients SC properties */
+                    api_sched_ctrl_configure(simple_get_sched_ctrl(&env->simple, 0), client_t.process.thread.sched_context.cptr,
+                                    250 * US_IN_MS, 350 * US_IN_MS,
+                                        0, 0);
 
-                if (ret1 > ret2) {
-                    results->benchmarks[j][i] = ret1 - ret2;
-                } else {
-                    results->benchmarks[j][i] = ret2 - ret1;
+                    error = api_sc_bind(client_t.process.thread.sched_context.cptr,
+                                                    client_t.process.thread.tcb.cptr);
+
+
+                    /* Start client */
+                    printf("Starting client.\n");
+                    error = benchmark_spawn_process(&(client_t.process), &env->slab_vka, &env->vspace, 3, client_t.argv, 1);
+                    ZF_LOGF_IF(error, "Failed to spawn client\n");
+
+
+
+
+                    /* get results */
+
+                    ccnt_t ret1 = get_result(return_ep_path.capPtr);
+                    printf("Got result1 %lu\n", ret1);
+
+
+
+                    ccnt_t ret2 = get_result(return_ep_path.capPtr);
+                    printf("Got result2 %lu\n", ret2);
+
+                    if (ret1 > ret2) {
+                        results->benchmarks[j][i] = ret1 - ret2;
+                    } else {
+                        results->benchmarks[j][i] = ret2 - ret1;
+                    }
+
+
+                    // Bind SC to server
+
+                    error = api_sc_bind(server_thread_t.process.thread.sched_context.cptr,
+                                    server_thread_t.process.thread.tcb.cptr);
+
+
+                    /* clean up - clean server first in case it is sharing the client's cspace and vspace */
+                    seL4_TCB_Suspend(client_t.process.thread.tcb.cptr);
+                    seL4_TCB_Suspend(server_thread_t.process.thread.tcb.cptr);
+                    seL4_TCB_Suspend(low_prio_t.process.thread.tcb.cptr);
+
+                    timing_destroy();
                 }
-
-
-                // Bind SC to server
-
-                error = api_sc_bind(server_thread_t.process.thread.sched_context.cptr,
-                                server_thread_t.process.thread.tcb.cptr);
-
-
-                /* clean up - clean server first in case it is sharing the client's cspace and vspace */
-                seL4_TCB_Suspend(client_t.process.thread.tcb.cptr);
-                seL4_TCB_Suspend(server_thread_t.process.thread.tcb.cptr);
-                seL4_TCB_Suspend(low_prio_t.process.thread.tcb.cptr);
-
-                timing_destroy();
             }
         }
     }

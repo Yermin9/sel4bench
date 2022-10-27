@@ -67,6 +67,8 @@ typedef struct benchmark_params {
 
     /* Whether this is a test that defers budget */
     bool threshold_defer;
+
+    bool ep_block;
 } benchmark_params_t;
 
 struct overhead_benchmark_params {
@@ -210,22 +212,22 @@ static const benchmark_params_t benchmark_params[] = {
     },
     /* Call fastpath, with deferring between client and server in the same address space, with a large threshold set */
     {
-        .name        = "seL4_Call_with_threshold_defer",
+        .name        = "seL4_Call_with_threshold_defer_fastpath",
         .direction   = DIR_TO,
         .client_fn   = IPC_CALL_FUNC,
         .server_fn   = IPC_REPLYRECV_10_FUNC2,
         .same_vspace = false,
         .client_prio = seL4_MaxPrio - 1,
         .server_prio = seL4_MaxPrio - 1,
-        .length = 10,
+        .length = 0,
         .overhead_id = CALL_10_OVERHEAD,
         .threshold = 1,
         .threshold_defer = true,
+        .ep_block = false,
     },
-    // TODO
     /* Call slowpath, with a budget defer occuring */
     {
-        .name        = "seL4_Call_with_threshold_defer",
+        .name        = "seL4_Call_with_threshold_defer_slowpath",
         .direction   = DIR_TO,
         .client_fn   = IPC_CALL_FUNC2,
         .server_fn   = IPC_REPLYRECV_10_FUNC2,
@@ -234,11 +236,25 @@ static const benchmark_params_t benchmark_params[] = {
         .server_prio = seL4_MaxPrio - 1,
         .length = 10,
         .overhead_id = CALL_10_OVERHEAD,
-        .threshold = 1,
+        .threshold = 0,
         .threshold_defer = true,
+        .ep_block = false,
     },
-    // TODO
-    /* Call onto empty endpoint, so a  */
+    /* Call onto empty endpoint, as a baseline  */
+        {
+        .name        = "seL4_Call_and_block",
+        .direction   = DIR_TO,
+        .client_fn   = IPC_CALL_FUNC2,
+        .server_fn   = IPC_REPLYRECV_10_FUNC2,
+        .same_vspace = false,
+        .client_prio = seL4_MaxPrio - 1,
+        .server_prio = seL4_MaxPrio - 1,
+        .length = 10,
+        .overhead_id = CALL_10_OVERHEAD,
+        .threshold = 0,
+        .threshold_defer = true,
+        .ep_block = true,
+    },
 
 #endif
 };
