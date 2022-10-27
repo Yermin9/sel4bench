@@ -212,7 +212,7 @@ static const benchmark_params_t benchmark_params[] = {
     {
         .name        = "seL4_Call_with_threshold_defer",
         .direction   = DIR_TO,
-        .client_fn   = IPC_CALL_10_FUNC2,
+        .client_fn   = IPC_CALL_FUNC,
         .server_fn   = IPC_REPLYRECV_10_FUNC2,
         .same_vspace = false,
         .client_prio = seL4_MaxPrio - 1,
@@ -222,6 +222,24 @@ static const benchmark_params_t benchmark_params[] = {
         .threshold = 1,
         .threshold_defer = true,
     },
+    // TODO
+    /* Call slowpath, with a budget defer occuring */
+    {
+        .name        = "seL4_Call_with_threshold_defer",
+        .direction   = DIR_TO,
+        .client_fn   = IPC_CALL_FUNC2,
+        .server_fn   = IPC_REPLYRECV_10_FUNC2,
+        .same_vspace = false,
+        .client_prio = seL4_MaxPrio - 1,
+        .server_prio = seL4_MaxPrio - 1,
+        .length = 10,
+        .overhead_id = CALL_10_OVERHEAD,
+        .threshold = 1,
+        .threshold_defer = true,
+    },
+    // TODO
+    /* Call onto empty endpoint, so a  */
+
 #endif
 };
 

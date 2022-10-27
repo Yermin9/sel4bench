@@ -401,7 +401,7 @@ void CONSTRUCTOR(MUSLCSYS_WITH_VSYSCALL_PRIORITY) init_env(void)
 }
 
 #if defined(CONFIG_KERNEL_IPCTHRESHOLDS) && defined(CONFIG_KERNEL_MCS)
-seL4_Word threshold_defer_call(int argc, char *argv[]) {
+seL4_Word threshold_defer_call_fp(int argc, char *argv[]) {
     uint32_t i;
 
     seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 0);
@@ -417,36 +417,65 @@ seL4_Word threshold_defer_call(int argc, char *argv[]) {
     // seL4_Debug_PutChar('C');
     seL4_Send(high_low_ep, tag);
 
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < 2; i++) {
 
         
 
         /* Burn some budget */
         COMPILER_MEMORY_FENCE();
-        // seL4_Time consumed = 0;
-        // while(consumed < 50*US_IN_MS) {
-        // while(consumed < 50000) {
         int i =10;
 
         volatile long int j=0;
-        while (i<10) {
-            seL4_TestingDefer(12*US_IN_MS);
-            // seL4_YieldUntilBudget(2*US_IN_MS);
-            // seL4_Yield();
-            // j=0;
-            // while(j<1750000) {
-            //     j+=1;
-            // } 
-            i=i+1;
+        while (j<35000000) {
+            j=j+1;
         }
-            // while(j<35000000) {
-            //     j+=1;
-            // }
-            /* Our max budget is 600 and threshold is 500, so burn 300 budget  */
-            // seL4_SchedContext_Consumed_t consumed_budget = seL4_SchedContext_Consumed(sched_context);
-            // consumed += consumed_budget.consumed;
-            // send_result(result_ep, consumed);
-        // }
+        COMPILER_MEMORY_FENCE();
+        
+        /* Wakeup low_prio */
+        seL4_Send(high_low_ep, tag);
+        
+         /* CALL */
+        // DO_REAL_CALL(ep, tag);
+        READ_COUNTER_BEFORE(start);
+        seL4_Call(ep,tag);
+        COMPILER_MEMORY_FENCE();
+    }
+    
+
+    /* Send 'start' back*/
+    send_result(result_ep, start);
+
+    while (1) {}
+}
+
+seL4_Word threshold_defer_call_sp(int argc, char *argv[]) {
+    uint32_t i;
+
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 10);
+
+    seL4_CPtr ep = atoi(argv[0]);
+    seL4_CPtr result_ep = atoi(argv[1]);
+    seL4_CPtr high_low_ep = atoi(argv[2]);
+
+    ccnt_t start=0;
+
+
+    /* Wakeup low_prio initially */
+    // seL4_Debug_PutChar('C');
+    seL4_Send(high_low_ep, tag);
+
+    for (i = 0; i < 2; i++) {
+
+        
+
+        /* Burn some budget */
+        COMPILER_MEMORY_FENCE();
+        int i =10;
+
+        volatile long int j=0;
+        while (j<35000000) {
+            j=j+1;
+        }
         COMPILER_MEMORY_FENCE();
         
         /* Wakeup low_prio */
@@ -645,7 +674,7 @@ int main(int argc, char **argv)
     benchmark_shallow_clone_process(env, &server_thread_t.process, 20, 0, "server process");
     benchmark_shallow_clone_process(env, &low_prio_t.process, 10, 0, "low_prio process");
 
-    client_t.process.entry_point = threshold_defer_call;
+    
     server_thread_t.process.entry_point = threshold_defer_recv;
     low_prio_t.process.entry_point = threshold_defer_low_prio;
 
@@ -679,6 +708,16 @@ int main(int argc, char **argv)
     for (j = 0; j < ARRAY_SIZE(benchmark_params); j++) {
     const struct benchmark_params *params = &benchmark_params[j];
         if(params->threshold_defer) {
+
+            switch(params->client_fn) {
+                case IPC_CALL_FUNC:
+                    client_t.process.entry_point = threshold_defer_call_fp;
+                    break;
+                case IPC_CALL_FUNC2:
+                    client_t.process.entry_point = threshold_defer_call_sp;
+                    break;
+            }
+
             for (int i = 0; i < RUNS; i++) {
 
                 timing_init();
@@ -722,7 +761,7 @@ int main(int argc, char **argv)
 
                 /* Set clients SC properties */
                 api_sched_ctrl_configure(simple_get_sched_ctrl(&env->simple, 0), client_t.process.thread.sched_context.cptr,
-                                250 * US_IN_MS, 500 * US_IN_MS,
+                                250 * US_IN_MS, 350 * US_IN_MS,
                                     20, 0);
 
                 error = api_sc_bind(client_t.process.thread.sched_context.cptr,
