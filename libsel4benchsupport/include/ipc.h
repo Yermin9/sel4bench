@@ -240,9 +240,26 @@ static const benchmark_params_t benchmark_params[] = {
         .threshold_defer = true,
         .ep_block = false,
     },
+
+
+#endif
     /* Call onto empty endpoint, as a baseline  */
-        {
-        .name        = "seL4_Call_and_block",
+    {
+        .name        = "seL4_Call_and_block_fastpath",
+        .direction   = DIR_TO,
+        .client_fn   = IPC_CALL_FUNC,
+        .server_fn   = IPC_REPLYRECV_10_FUNC2,
+        .same_vspace = false,
+        .client_prio = seL4_MaxPrio - 1,
+        .server_prio = seL4_MaxPrio - 1,
+        .length = 0,
+        .overhead_id = CALL_10_OVERHEAD,
+        .threshold = 0,
+        .threshold_defer = true,
+        .ep_block = true,
+    },
+    {
+        .name        = "seL4_Call_and_block_slowpath",
         .direction   = DIR_TO,
         .client_fn   = IPC_CALL_FUNC2,
         .server_fn   = IPC_REPLYRECV_10_FUNC2,
@@ -255,8 +272,6 @@ static const benchmark_params_t benchmark_params[] = {
         .threshold_defer = true,
         .ep_block = true,
     },
-
-#endif
 };
 
 static const struct overhead_benchmark_params overhead_benchmark_params[] = {

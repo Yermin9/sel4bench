@@ -547,9 +547,33 @@ seL4_Word threshold_defer_low_prio(int argc, char *argv[]) {
 }
 
 
+#endif
+
+seL4_Word ipc_block_caller_fp(int argc, char *argv[]) {
+    seL4_CPtr ep = atoi(argv[0]);
+    seL4_CPtr result_ep = atoi(argv[1]);
+    seL4_CPtr high_low_ep = atoi(argv[2]);
+
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 0);
 
 
-seL4_Word ipc_block_caller(int argc, char *argv[]) {
+    ccnt_t start=0;
+
+    seL4_Send(high_low_ep, tag);
+
+    int i=0;
+    for (i = 0; i < 2; i++) {
+        /* Signal low prio */
+        
+        READ_COUNTER_BEFORE(start);
+        seL4_Call(high_low_ep,tag);
+    }
+
+    send_result(result_ep, start);
+
+}
+
+seL4_Word ipc_block_caller_sp(int argc, char *argv[]) {
     seL4_CPtr ep = atoi(argv[0]);
     seL4_CPtr result_ep = atoi(argv[1]);
     seL4_CPtr high_low_ep = atoi(argv[2]);
@@ -572,6 +596,7 @@ seL4_Word ipc_block_caller(int argc, char *argv[]) {
     send_result(result_ep, start);
 
 }
+
 seL4_Word ipc_block_low_prio(int argc, char *argv[]) {
     seL4_CPtr result_ep = atoi(argv[0]);
     seL4_CPtr high_low_ep = atoi(argv[1]);
@@ -599,7 +624,7 @@ seL4_Word ipc_block_low_prio(int argc, char *argv[]) {
     send_result(result_ep, end);
 }
 
-#endif
+
 
 int main(int argc, char **argv)
 {
@@ -695,7 +720,7 @@ int main(int argc, char **argv)
 
 
 /* TODO, working here */
-#if defined(CONFIG_KERNEL_IPCTHRESHOLDS) && defined(CONFIG_KERNEL_MCS)
+// #if defined(CONFIG_KERNEL_IPCTHRESHOLDS) && defined(CONFIG_KERNEL_MCS)
     printf("Starting threshold tests.\n");
     int error;
 
@@ -727,12 +752,13 @@ int main(int argc, char **argv)
     benchmark_shallow_clone_process(env, &server_thread_t.process, 20, 0, "server process");
     benchmark_shallow_clone_process(env, &low_prio_t.process, 10, 0, "low_prio process");
 
-    
+#if defined(CONFIG_KERNEL_IPCTHRESHOLDS) && defined(CONFIG_KERNEL_MCS)
+
     server_thread_t.process.entry_point = threshold_defer_recv;
     low_prio_t.process.entry_point = threshold_defer_low_prio;
     client_t.process.entry_point = threshold_defer_call_fp;
 
-
+#endif
     cspacepath_t client_t_sc_path;
     /* Make path to client SC */
     vka_cspace_make_path(&env->slab_vka, client_t.process.thread.sched_context.cptr, &client_t_sc_path);
@@ -763,22 +789,30 @@ int main(int argc, char **argv)
     const struct benchmark_params *params = &benchmark_params[j];
         if(params->threshold_defer) {
 
+#if defined(CONFIG_KERNEL_IPCTHRESHOLDS) && defined(CONFIG_KERNEL_MCS)
+
             switch(params->client_fn) {
                 case IPC_CALL_FUNC:
-                    printf("Op1");
                     client_t.process.entry_point = threshold_defer_call_fp;
                     break;
                 case IPC_CALL_FUNC2:
-                    printf("Op2");
                     client_t.process.entry_point = threshold_defer_call_sp;
                     break;
             }
+#endif
             if (params->ep_block) {
                 for (int i = 0; i < RUNS; i++) {
 
                     timing_init();
 
-                    client_t.process.entry_point = ipc_block_caller;
+                    switch(params->client_fn) {
+                        case IPC_CALL_FUNC:
+                            client_t.process.entry_point = ipc_block_caller_fp;
+                            break;
+                        case IPC_CALL_FUNC2:
+                            client_t.process.entry_point = ipc_block_caller_sp;
+                            break;
+                    }
                     low_prio_t.process.entry_point = ipc_block_low_prio;
 
                     /* Start low_prio */
@@ -822,11 +856,11 @@ int main(int argc, char **argv)
                 for (int i = 0; i < RUNS; i++) {
 
                     timing_init();
-
+#if defined(CONFIG_KERNEL_IPCTHRESHOLDS) && defined(CONFIG_KERNEL_MCS)
                     /* Set EP Threshold on call_endpoint */
                     error = seL4_CNode_Endpoint_SetThreshold(call_ep_path.root, call_ep_path.capPtr, call_ep_path.capDepth, 150*US_IN_MS);
                     ZF_LOGF_IF(error, "Failed to set threshold\n");
-
+#endif
 
                     /* Start low_prio */
                     printf("Starting low prio.\n");
@@ -911,7 +945,7 @@ int main(int argc, char **argv)
         }
     }
 
-#endif
+// #endif
 
     /* done -> results are stored in shared memory so we can now return */
     benchmark_finished(EXIT_SUCCESS);
