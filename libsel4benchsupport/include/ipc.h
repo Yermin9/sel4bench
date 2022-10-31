@@ -65,8 +65,8 @@ typedef struct benchmark_params {
     /* Threshold to be set on the endpoint */
     uint64_t threshold;
 
-    /* Whether this is a test that defers budget */
-    bool threshold_defer;
+    /* Threshold test type, 0 means not a special threshold test */
+    int threshold_test_type;
 
     bool ep_block;
 } benchmark_params_t;
@@ -91,7 +91,7 @@ static const benchmark_params_t benchmark_params[] = {
         .overhead_id = CALL_OVERHEAD,
         .passive = true,
         .threshold = 0,
-        .threshold_defer = false,
+        .threshold_test_type=0,
     },
     /* ReplyRecv fastpath between server and client in the same address space */
     {
@@ -106,7 +106,7 @@ static const benchmark_params_t benchmark_params[] = {
         .overhead_id = REPLY_RECV_OVERHEAD,
         .passive = true,
         .threshold = 0,
-        .threshold_defer = false,
+        .threshold_test_type=0,
     },
     /* Call fastpath between client and server in different address spaces */
     {
@@ -121,7 +121,7 @@ static const benchmark_params_t benchmark_params[] = {
         .overhead_id = CALL_OVERHEAD,
         .passive = true,
         .threshold = 0,
-        .threshold_defer = false,
+        .threshold_test_type=0,
     },
     /* ReplyRecv fastpath between server and client in different address spaces */
     {
@@ -136,7 +136,7 @@ static const benchmark_params_t benchmark_params[] = {
         .overhead_id = REPLY_RECV_OVERHEAD,
         .passive = true,
         .threshold = 0,
-        .threshold_defer = false,
+        .threshold_test_type=0,
     },
     /* Send slowpath (no fastpath for send) same prio client-server, different address space */
     {
@@ -150,7 +150,7 @@ static const benchmark_params_t benchmark_params[] = {
         .length = 0,
         .overhead_id = SEND_OVERHEAD,
         .threshold = 0,
-        .threshold_defer = false,
+        .threshold_test_type=0,
     },
     /* Call slowpath, long IPC (10), same prio client to server, different address space */
     {
@@ -164,7 +164,7 @@ static const benchmark_params_t benchmark_params[] = {
         .length = 10,
         .overhead_id = CALL_10_OVERHEAD,
         .threshold = 0,
-        .threshold_defer = false,
+        .threshold_test_type=0,
     },
     /* ReplyRecv slowpath, long IPC (10), same prio server to client, on the slowpath, different address space */
     {
@@ -178,7 +178,7 @@ static const benchmark_params_t benchmark_params[] = {
         .length = 10,
         .overhead_id = REPLY_RECV_10_OVERHEAD,
         .threshold = 0,
-        .threshold_defer = false,
+        .threshold_test_type=0,
     },
 #ifdef CONFIG_KERNEL_IPCTHRESHOLDS
     /* Call fastpath between client and server in the same address space, with a small threshold set */
@@ -194,7 +194,7 @@ static const benchmark_params_t benchmark_params[] = {
         .overhead_id = CALL_OVERHEAD,
         .passive = true,
         .threshold = 1,
-        .threshold_defer = false,
+        .threshold_test_type=0,
     },
     /* Call slowpath between client and server in the same address space, with a small threshold set */
     {
@@ -208,38 +208,38 @@ static const benchmark_params_t benchmark_params[] = {
         .length = 10,
         .overhead_id = CALL_10_OVERHEAD,
         .threshold = 1,
-        .threshold_defer = false,
+        .threshold_test_type=0,
     },
     /* Call fastpath, with deferring between client and server in the same address space, with a large threshold set */
-    {
-        .name        = "seL4_Call_with_threshold_defer_fastpath",
-        .direction   = DIR_TO,
-        .client_fn   = IPC_CALL_FUNC,
-        .server_fn   = IPC_REPLYRECV_10_FUNC2,
-        .same_vspace = false,
-        .client_prio = seL4_MaxPrio - 1,
-        .server_prio = seL4_MaxPrio - 1,
-        .length = 0,
-        .overhead_id = CALL_10_OVERHEAD,
-        .threshold = 1,
-        .threshold_defer = true,
-        .ep_block = false,
-    },
-    /* Call slowpath, with a budget defer occuring */
-    {
-        .name        = "seL4_Call_with_threshold_defer_slowpath",
-        .direction   = DIR_TO,
-        .client_fn   = IPC_CALL_FUNC2,
-        .server_fn   = IPC_REPLYRECV_10_FUNC2,
-        .same_vspace = false,
-        .client_prio = seL4_MaxPrio - 1,
-        .server_prio = seL4_MaxPrio - 1,
-        .length = 10,
-        .overhead_id = CALL_10_OVERHEAD,
-        .threshold = 0,
-        .threshold_defer = true,
-        .ep_block = false,
-    },
+    // {
+    //     .name        = "seL4_Call_with_threshold_defer_fastpath",
+    //     .direction   = DIR_TO,
+    //     .client_fn   = IPC_CALL_FUNC,
+    //     .server_fn   = IPC_REPLYRECV_10_FUNC2,
+    //     .same_vspace = false,
+    //     .client_prio = seL4_MaxPrio - 1,
+    //     .server_prio = seL4_MaxPrio - 1,
+    //     .length = 0,
+    //     .overhead_id = CALL_10_OVERHEAD,
+    //     .threshold = 1,
+    //     .ep_block = false,
+    //     .threshold_test_type=1,
+    // },
+    // /* Call slowpath, with a budget defer occuring */
+    // {
+    //     .name        = "seL4_Call_with_threshold_defer_slowpath",
+    //     .direction   = DIR_TO,
+    //     .client_fn   = IPC_CALL_FUNC2,
+    //     .server_fn   = IPC_REPLYRECV_10_FUNC2,
+    //     .same_vspace = false,
+    //     .client_prio = seL4_MaxPrio - 1,
+    //     .server_prio = seL4_MaxPrio - 1,
+    //     .length = 10,
+    //     .overhead_id = CALL_10_OVERHEAD,
+    //     .threshold = 0,
+    //     .ep_block = false,
+    //     .threshold_test_type=1,
+    // },
 
 
 #endif
@@ -255,8 +255,8 @@ static const benchmark_params_t benchmark_params[] = {
         .length = 0,
         .overhead_id = CALL_10_OVERHEAD,
         .threshold = 0,
-        .threshold_defer = true,
         .ep_block = true,
+        .threshold_test_type=2,
     },
     {
         .name        = "seL4_Call_and_block_slowpath",
@@ -269,8 +269,22 @@ static const benchmark_params_t benchmark_params[] = {
         .length = 10,
         .overhead_id = CALL_10_OVERHEAD,
         .threshold = 0,
-        .threshold_defer = true,
         .ep_block = true,
+        .threshold_test_type=2,
+    },
+    {
+        .name        = "Test Thresholds work",
+        .direction   = DIR_TO,
+        .client_fn   = IPC_CALL_FUNC2,
+        .server_fn   = IPC_REPLYRECV_10_FUNC2,
+        .same_vspace = false,
+        .client_prio = seL4_MaxPrio - 1,
+        .server_prio = seL4_MaxPrio - 1,
+        .length = 10,
+        .overhead_id = CALL_10_OVERHEAD,
+        .threshold = 0,
+        .ep_block = true,
+        .threshold_test_type=3,
     },
 };
 
