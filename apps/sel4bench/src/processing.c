@@ -39,7 +39,11 @@ void process_average_results(int rows, int cols, ccnt_t array[rows][cols], resul
     }
 }
 
-result_t process_result(size_t n, ccnt_t array[n], result_desc_t desc)
+result_t process_result(size_t n, ccnt_t array[n], result_desc_t desc) {
+    process_result_core(n, array, desc, true);
+}
+
+result_t process_result_core(size_t n, ccnt_t array[n], result_desc_t desc, bool subtract_overhead)
 {
     array = &array[desc.ignored];
     int size = n - desc.ignored;
@@ -55,9 +59,10 @@ result_t process_result(size_t n, ccnt_t array[n], result_desc_t desc)
             };
         }
     }
-
-    for (int i = 0; i < size; i++) {
-        array[i] -= desc.overhead;
+    if (subtract_overhead) {
+        for (int i = 0; i < size; i++) {
+            array[i] -= desc.overhead;
+        }
     }
 
     return calculate_results(size, array);

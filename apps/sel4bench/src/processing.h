@@ -8,6 +8,8 @@
 
 #include "benchmark.h"
 
+
+
 /*
  * Compute the variance, standard deviation, mean, min and max for a set of values.
  *
@@ -16,6 +18,9 @@
  * @param desc  further (optional) details about the results
  */
 result_t process_result(size_t n, ccnt_t array[n], result_desc_t desc);
+
+result_t process_result_core(size_t n, ccnt_t array[n], result_desc_t desc, bool subtract_overhead);
+
 
 /**
  * @param ncols    size of the 1st dimension of array.
@@ -28,6 +33,9 @@ result_t process_result(size_t n, ccnt_t array[n], result_desc_t desc);
  */
 void process_results(size_t ncols, size_t nrows, ccnt_t array[ncols][nrows], result_desc_t desc,
                      result_t results[ncols]);
+
+
+
 
 /**
  * Process a table of results that need to be divided by AVERAGE_RUNS

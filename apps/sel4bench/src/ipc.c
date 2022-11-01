@@ -114,7 +114,9 @@ static json_t *process_ipc_results(void *r)
         length[i] = benchmark_params[i].length;
         threshold[i] = benchmark_params[i].threshold;
 
-        results[i] = process_result(RUNS, raw_results->benchmarks[i], desc);
+        
+        results[i] = process_result_core(RUNS, raw_results->benchmarks[i], desc, benchmark_params[i].threshold_test_type!=3);
+
     }
 
     json_t *array = json_array();

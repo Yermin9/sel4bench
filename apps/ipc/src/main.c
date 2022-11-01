@@ -638,18 +638,21 @@ seL4_Word malicious_fault_handler(int argc, char *argv[]) {
     seL4_MessageInfo_t tag;
     
     /* Notify the initialiser that we are ready, then wait */
-    seL4_NBSendRecv(result_ep, tag, high_low_ep, NULL, reply);
-    timeout_faults++;
+    tag1 = seL4_NBSendRecv(result_ep, tag, high_low_ep, NULL, reply);
+    if(!seL4_isTimeoutFault_tag(tag1)) {
+        // Its the driver telling us the test is finished
+        send_result(result_ep, timeout_faults);
+        while (1) {}
+    }
+    timeout_faults= timeout_faults+1;
     while(1) {
-        send_result(result_ep, 77);
-        tag1 = seL4_ReplyRecv(high_low_ep, tag, NULL, reply);
-        
         if(!seL4_isTimeoutFault_tag(tag1)) {
             // Its the driver telling us the test is finished
             send_result(result_ep, timeout_faults);
             break;
         }
-        timeout_faults++;
+        tag1 = seL4_ReplyRecv(high_low_ep, tag, NULL, reply);
+        timeout_faults= timeout_faults+1;
     }
     
 
@@ -660,22 +663,28 @@ seL4_Word malicious_client(int argc, char *argv[]) {
     seL4_CPtr call_ep = atoi(argv[0]);
     seL4_CPtr result_ep = atoi(argv[1]);
 
-    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 0);
-
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 10);
+    send_result(result_ep,42);;
     
     // Burn an increasing amount of budget
-    for (long int i=0; i<10000;i=i+10) {
+    // 1710000
+    for (long int i=0; i<=1200000;i=i+20000) {
         seL4_Yield();
         volatile long int j=0;
         // send_result(result_ep,i);
-        // while(j<i) {
-        //     j++;
-        // }
+        while(j<i) {
+            j++;
+        }
         // send_result(result_ep,0);
-        seL4_Call(call_ep, tag);
+        seL4_MessageInfo_t tag2 = seL4_Call(call_ep, tag);
+
+        if (seL4_MessageInfo_get_label(tag2)==seL4_IllegalOperation) {
+            send_result(result_ep,99);
+            while (1) {}
+        }
     }
     // Let the driver know we're done
-    // send_result(result_ep,0);
+    send_result(result_ep,43);
 
     while (1) {};
 }
@@ -700,7 +709,7 @@ seL4_Word malicious_server(int argc, char *argv[]) {
         // }
         // Consume a set amount of budget
         volatile long int j =0;
-        while (j<1715000) { // corresponds to a 10MS budget 1712500 / 1715000
+        while (j<1710000) { // corresponds to a 10MS budget 1710000 / 1715000
             j++;
         }
         // send_result(result_ep,103);
@@ -1042,13 +1051,22 @@ int main(int argc, char **argv)
                 // Start with no threshold and count timeout events
 
                 // Then set a threshold and count timeouts
+                while (2<1) {}
+                seL4_CPtr clients_sc = sel4utils_copy_path_to_process(&server_thread_t.process, client_t_sc_path);
+                printf("Sc copy %d\n", clients_sc);
+                sel4utils_create_word_args(server_thread_t.argv_strings, server_thread_t.argv, NUM_ARGS,
+                        server_thread_t.ep, server_thread_t.result_ep, clients_sc);
 
+                sel4utils_create_word_args(low_prio_t.argv_strings, low_prio_t.argv, NUM_ARGS,
+                    low_prio_t.result_ep, low_prio_t_highlow, SEL4UTILS_REPLY_SLOT);
 
-                for (int i = 0; i < RUNS; i++) {
+                for (int i = 0; i < 2; i++) {
                     timing_init();
 
 
-                    error = seL4_CNode_Endpoint_SetThreshold(call_ep_path.root, call_ep_path.capPtr, call_ep_path.capDepth, 0*US_IN_MS);
+                    error = seL4_CNode_Endpoint_SetThreshold(call_ep_path.root, call_ep_path.capPtr, call_ep_path.capDepth, 11 * US_IN_MS);
+                    // error = seL4_CNode_Endpoint_SetThreshold(call_ep_path.root, call_ep_path.capPtr, call_ep_path.capDepth, 0);
+                    ZF_LOGF_IF(error, "Failed to set threshold");
 
                     client_t.process.entry_point = malicious_client;
 
@@ -1056,18 +1074,20 @@ int main(int argc, char **argv)
 
                     low_prio_t.process.entry_point = malicious_fault_handler;
 
-                    seL4_CPtr clients_sc = sel4utils_copy_path_to_process(&server_thread_t.process, client_t_sc_path);
-                    printf("Sc copy %d\n", clients_sc);
-                    sel4utils_create_word_args(server_thread_t.argv_strings, server_thread_t.argv, NUM_ARGS,
-                                server_thread_t.ep, server_thread_t.result_ep, clients_sc);
 
+                    // Unbind both client and server SC
+                    api_sc_unbind(server_thread_t.process.thread.sched_context.cptr);
+                    api_sc_unbind(client_t.process.thread.sched_context.cptr);
+
+                    // Rebind them
+                    api_sc_bind(server_thread_t.process.thread.sched_context.cptr,
+                            server_thread_t.process.thread.tcb.cptr);
+
+                    api_sc_bind(client_t.process.thread.sched_context.cptr,
+                            client_t.process.thread.tcb.cptr);
 
                     // Set server timeout endpoint
                     seL4_TCB_SetTimeoutEndpoint(server_thread_t.process.thread.tcb.cptr,high_low_ep.cptr);
-
-
-                    sel4utils_create_word_args(low_prio_t.argv_strings, low_prio_t.argv, NUM_ARGS,
-                                low_prio_t.result_ep, low_prio_t_highlow, SEL4UTILS_REPLY_SLOT);
 
                     // Start fault handler
                     printf("Starting handler.\n");
@@ -1096,11 +1116,11 @@ int main(int argc, char **argv)
                     /* convert server to passive */
                     error = api_sc_unbind_object(server_thread_t.process.thread.sched_context.cptr,
                                                     server_thread_t.process.thread.tcb.cptr);
-
+                    // ZF_LOGF_IF(error, "Failed to convert server to passive");
 
 
                     api_sched_ctrl_configure(simple_get_sched_ctrl(&env->simple, 0), client_t.process.thread.sched_context.cptr,
-                    10 * US_IN_MS, 20 * US_IN_MS,
+                    12 * US_IN_MS, 20 * US_IN_MS,
                         0, 0);
 
 
@@ -1109,29 +1129,32 @@ int main(int argc, char **argv)
                     error = benchmark_spawn_process(&(client_t.process), &env->slab_vka, &env->vspace, 3, client_t.argv, 1);
                     ZF_LOGF_IF(error, "Failed to spawn client\n");
 
+                    // Check the client started
+                    ccnt_t ret1 = get_result(return_ep_path.capPtr);
+                    printf("Val: %d\n", ret1);
 
-
-
-                    while (1) {
-                        // Wait for the client to signal us
-                        ccnt_t ret1 = get_result(return_ep_path.capPtr);
-                        printf("Got result1 %lu\n", ret1);
-                    }
-
-
+                    // Wait for the client to tell us its done
+                    ret1 = get_result(return_ep_path.capPtr);
+                    printf("Val2: %d\n", ret1);
 
                     // Message the fault handler
-                    // seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 0);
-                    // seL4_Send(high_low_ep.cptr, tag);
+                    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 0);
+                    seL4_Send(high_low_ep.cptr, tag);
 
-                    // ret1 = get_result(return_ep_path.capPtr);
+                    // 
+                    ccnt_t faults = get_result(return_ep_path.capPtr);
+
 
                     // printf("Got result1 %lu\n", ret1);
-                    // results->benchmarks[j][i] = ret1;
+                    results->benchmarks[j][i] = faults;
+
 
 
                     seL4_TCB_Suspend(client_t.process.thread.tcb.cptr);
                     seL4_TCB_Suspend(server_thread_t.process.thread.tcb.cptr);
+                    seL4_TCB_Suspend(low_prio_t.process.thread.tcb.cptr);
+
+                    
 
                     timing_destroy();
                 }
