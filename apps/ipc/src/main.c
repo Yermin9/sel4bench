@@ -56,8 +56,8 @@ typedef struct helper_thread {
     sel4utils_process_t process;
     seL4_CPtr ep;
     seL4_CPtr result_ep;
-    char *argv[NUM_ARGS];
-    char argv_strings[NUM_ARGS][WORD_STRING_SIZE];
+    char *argv[4];
+    char argv_strings[4][WORD_STRING_SIZE];
 } helper_thread_t;
 
 void abort(void)
@@ -401,6 +401,34 @@ void CONSTRUCTOR(MUSLCSYS_WITH_VSYSCALL_PRIORITY) init_env(void)
 }
 
 #if defined(CONFIG_KERNEL_IPCTHRESHOLDS) && defined(CONFIG_KERNEL_MCS)
+
+seL4_Word threshold_defer_preempter(int argc, char *argv[]) {
+    seL4_CPtr prempt_ep = atoi(argv[0]);
+    seL4_CPtr result_ep = atoi(argv[1]);
+    seL4_CPtr reply = atoi(argv[2]);
+
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 0);
+    /* Tell the initialiser we're ready */
+
+    
+    /* Notify the initialiser that we are ready, then wait */
+    seL4_NBSendRecv(result_ep, tag, prempt_ep, NULL, reply);
+
+    while (1) {
+        
+
+        int i=0;
+        while (i<80) {
+            seL4_Yield();
+            i++;
+        }
+        // Wait for someone to tell us to go
+        seL4_Wait(prempt_ep, NULL);
+    }
+}
+
+
+
 seL4_Word threshold_defer_call_fp(int argc, char *argv[]) {
     uint32_t i;
 
@@ -409,7 +437,10 @@ seL4_Word threshold_defer_call_fp(int argc, char *argv[]) {
     seL4_CPtr ep = atoi(argv[0]);
     seL4_CPtr result_ep = atoi(argv[1]);
     seL4_CPtr high_low_ep = atoi(argv[2]);
+     seL4_CPtr preempt_ep = atoi(argv[3]);
 
+    // send_result(result_ep, preempt_ep);
+    // while (1) {}
     ccnt_t start=0;
 
 
@@ -419,14 +450,15 @@ seL4_Word threshold_defer_call_fp(int argc, char *argv[]) {
 
     for (i = 0; i < 3; i++) {
 
-        
+        // Signal the preempter
+        seL4_Send(preempt_ep, tag);
 
         /* Burn some budget */
         COMPILER_MEMORY_FENCE();
         int i =10;
 
         volatile long int j=0;
-        while (j<35000000) {
+        while (j<8500000) { // == 50MS
             j=j+1;
         }
         COMPILER_MEMORY_FENCE();
@@ -456,7 +488,11 @@ seL4_Word threshold_defer_call_sp(int argc, char *argv[]) {
     seL4_CPtr ep = atoi(argv[0]);
     seL4_CPtr result_ep = atoi(argv[1]);
     seL4_CPtr high_low_ep = atoi(argv[2]);
+     seL4_CPtr preempt_ep = atoi(argv[3]);
 
+    // send_result(result_ep, preempt_ep);
+
+    // while (1) {}
     ccnt_t start=0;
 
 
@@ -466,14 +502,20 @@ seL4_Word threshold_defer_call_sp(int argc, char *argv[]) {
 
     for (i = 0; i < 3; i++) {
 
-        
+        // Signal the preempter
+        seL4_Send(preempt_ep, tag);        
 
         /* Burn some budget */
         COMPILER_MEMORY_FENCE();
         int i =10;
 
         volatile long int j=0;
-        while (j<35000000) {
+                //  1715000 == 10Ms
+                //  8500000 == 50MS
+        // while (j<35000000) {
+        //     j=j+1;
+        // }
+        while (j<8500000) { // == 50MS
             j=j+1;
         }
         COMPILER_MEMORY_FENCE();
@@ -668,7 +710,8 @@ seL4_Word malicious_client(int argc, char *argv[]) {
     
     // Burn an increasing amount of budget
     // 1710000
-    for (long int i=0; i<=1200000;i=i+20000) {
+    // for (long int i=100000; i<=600000;i=i+1000) {
+    for (long int i=100000; i<=600000;i=i+10000) {
         seL4_Yield();
         volatile long int j=0;
         // send_result(result_ep,i);
@@ -680,11 +723,12 @@ seL4_Word malicious_client(int argc, char *argv[]) {
 
         if (seL4_MessageInfo_get_label(tag2)==seL4_IllegalOperation) {
             send_result(result_ep,99);
+            send_result(result_ep,99);
             while (1) {}
         }
     }
     // Let the driver know we're done
-    send_result(result_ep,43);
+    send_result(result_ep,100000);
 
     while (1) {};
 }
@@ -709,7 +753,7 @@ seL4_Word malicious_server(int argc, char *argv[]) {
         // }
         // Consume a set amount of budget
         volatile long int j =0;
-        while (j<1710000) { // corresponds to a 10MS budget 1710000 / 1715000
+        while (j<1715000) { // corresponds to a 10MS budget 1710000 / 1715000
             j++;
         }
         // send_result(result_ep,103);
@@ -844,16 +888,26 @@ int main(int argc, char **argv)
 
 
 
-    helper_thread_t client_t, server_thread_t, low_prio_t;
+    helper_thread_t client_t, server_thread_t, low_prio_t, preempter_t;
     benchmark_shallow_clone_process(env, &client_t.process, 15, 0, "client");
     benchmark_shallow_clone_process(env, &server_thread_t.process, 20, 0, "server process");
     benchmark_shallow_clone_process(env, &low_prio_t.process, 10, 0, "low_prio process");
+    benchmark_shallow_clone_process(env, &preempter_t.process, 50, 0, "preempter process");
+
+    vka_object_t prempt_ep;
+    cspacepath_t preempt_path;
+
+    if (vka_alloc_endpoint(&env->slab_vka, &prempt_ep) != 0) {
+        ZF_LOGF("Failed to allocate endpoint");
+    }
+    vka_cspace_make_path(&env->slab_vka, prempt_ep.cptr, &preempt_path);
 
 #if defined(CONFIG_KERNEL_IPCTHRESHOLDS) && defined(CONFIG_KERNEL_MCS)
 
     server_thread_t.process.entry_point = threshold_defer_recv;
     low_prio_t.process.entry_point = threshold_defer_low_prio;
     client_t.process.entry_point = threshold_defer_call_fp;
+    preempter_t.process.entry_point = threshold_defer_preempter;
 
 #endif
     cspacepath_t client_t_sc_path;
@@ -864,7 +918,12 @@ int main(int argc, char **argv)
     client_t.result_ep = sel4utils_copy_path_to_process(&client_t.process, return_ep_path);
     seL4_CPtr client_t_highlow = sel4utils_copy_path_to_process(&client_t.process, high_low_ep_path);
     seL4_CPtr client_t_sc = sel4utils_copy_path_to_process(&client_t.process, client_t_sc_path);
+    seL4_CPtr preempt_client = sel4utils_copy_path_to_process(&client_t.process, preempt_path);
+    // printf("Preempt client: %u\n", preempt_client);
 
+
+    preempter_t.ep = sel4utils_copy_path_to_process(&preempter_t.process, preempt_path);
+    preempter_t.result_ep = sel4utils_copy_path_to_process(&preempter_t.process, return_ep_path);
 
     server_thread_t.ep = sel4utils_copy_path_to_process(&server_thread_t.process, call_ep_path);
     server_thread_t.result_ep = sel4utils_copy_path_to_process(&server_thread_t.process, return_ep_path);
@@ -872,15 +931,32 @@ int main(int argc, char **argv)
     low_prio_t.result_ep = sel4utils_copy_path_to_process(&low_prio_t.process, return_ep_path);
     seL4_CPtr low_prio_t_highlow = sel4utils_copy_path_to_process(&low_prio_t.process, high_low_ep_path);
 
+    sel4utils_create_word_args(preempter_t.argv_strings, preempter_t.argv, 3, 
+                                preempter_t.ep, preempter_t.result_ep, SEL4UTILS_REPLY_SLOT);
 
-    sel4utils_create_word_args(client_t.argv_strings, client_t.argv, 3, 
-                            client_t.ep, client_t.result_ep, client_t_highlow);
+
+    sel4utils_create_word_args(client_t.argv_strings, client_t.argv, 4, 
+                            client_t.ep, client_t.result_ep, client_t_highlow, preempt_client);
+
+    // sel4utils_create_word_args(client_t.argv_strings, client_t.argv, 3, 
+    //                         client_t.ep, client_t.result_ep, client_t_highlow);
 
     sel4utils_create_word_args(server_thread_t.argv_strings, server_thread_t.argv, NUM_ARGS,
                                server_thread_t.ep, server_thread_t.result_ep, SEL4UTILS_REPLY_SLOT);
 
     sel4utils_create_word_args(low_prio_t.argv_strings, low_prio_t.argv, NUM_ARGS, 
                                 low_prio_t.result_ep, low_prio_t_highlow, SEL4UTILS_REPLY_SLOT);
+
+
+    // Create a big SC for the client
+    vka_object_t client_big_sc;
+    error = vka_alloc_object(&env->slab_vka, seL4_SchedContextObject, seL4_MinSchedContextBits+4, &client_big_sc);
+    ZF_LOGF_IF(error, "Failed to create Big SC\n");
+
+    error = api_sc_unbind_object(client_t.process.thread.sched_context.cptr,
+                                client_t.process.thread.tcb.cptr);
+
+
     int j=0;
     for (j = 0; j < ARRAY_SIZE(benchmark_params); j++) {
         const struct benchmark_params *params = &benchmark_params[j];
@@ -903,25 +979,40 @@ int main(int argc, char **argv)
 
                     timing_init();
 
+
                     /* Set EP Threshold on call_endpoint */
-                    error = seL4_CNode_Endpoint_SetThreshold(call_ep_path.root, call_ep_path.capPtr, call_ep_path.capDepth, 150*US_IN_MS);
+                    error = seL4_CNode_Endpoint_SetThreshold(call_ep_path.root, call_ep_path.capPtr, call_ep_path.capDepth, 75*US_IN_MS);
                     ZF_LOGF_IF(error, "Failed to set threshold\n");
 
 
+                    api_sched_ctrl_configure(simple_get_sched_ctrl(&env->simple, 0), preempter_t.process.thread.sched_context.cptr,
+                        300, 500,
+                            0, 0);
+
+                    // Start prempter
+                    // printf("Starting prempter.\n");
+                    error = benchmark_spawn_process(&(preempter_t.process), &env->slab_vka, &env->vspace, 3,
+                                                preempter_t.argv, 1);
+                    ZF_LOGF_IF(error, "Failed to start low prio");  
+
+                    /* wait for preempter to tell us its initialised */
+                    seL4_Wait(return_ep_path.capPtr, NULL);                 
+
+
                     /* Start low_prio */
-                    printf("Starting low prio.\n");
-                    int error = benchmark_spawn_process(&(low_prio_t.process), &env->slab_vka, &env->vspace, NUM_ARGS,
+                    // printf("Starting low prio.\n");
+                    error = benchmark_spawn_process(&(low_prio_t.process), &env->slab_vka, &env->vspace, NUM_ARGS,
                                                 low_prio_t.argv, 1);
                     ZF_LOGF_IF(error, "Failed to start low prio");
 
                     
                     /* Wait for it to tell us its initialised */
-                    printf("Waiting for low prio.\n");
+                    // printf("Waiting for low prio.\n");
                     seL4_Wait(return_ep_path.capPtr, NULL);
 
 
                     /* Start the server */
-                    printf("Starting server.\n");
+                    // printf("Starting server.\n");
                     error = benchmark_spawn_process(&(server_thread_t.process), &env->slab_vka, &env->vspace, NUM_ARGS,
                                         server_thread_t.argv, 1);
                     ZF_LOGF_IF(error, "Failed to start server");
@@ -936,36 +1027,40 @@ int main(int argc, char **argv)
 
 
 
-                    error = api_sc_unbind_object(client_t.process.thread.sched_context.cptr,
+                    error = api_sc_unbind_object(client_big_sc.cptr,
                                                     client_t.process.thread.tcb.cptr);
 
 
                     /* Set clients SC properties */
-                    api_sched_ctrl_configure(simple_get_sched_ctrl(&env->simple, 0), client_t.process.thread.sched_context.cptr,
-                                    250 * US_IN_MS, 350 * US_IN_MS,
-                                        0, 0);
+                    api_sched_ctrl_configure(simple_get_sched_ctrl(&env->simple, 0), client_big_sc.cptr,
+                                    100 * US_IN_MS, 130 * US_IN_MS,
+                                        params->extra_refills, 0);
 
-                    error = api_sc_bind(client_t.process.thread.sched_context.cptr,
+                    error = api_sc_bind(client_big_sc.cptr,
                                                     client_t.process.thread.tcb.cptr);
 
 
                     /* Start client */
                     printf("Starting client.\n");
-                    error = benchmark_spawn_process(&(client_t.process), &env->slab_vka, &env->vspace, 3, client_t.argv, 1);
+                    error = benchmark_spawn_process(&(client_t.process), &env->slab_vka, &env->vspace, 4, client_t.argv, 1);
                     ZF_LOGF_IF(error, "Failed to spawn client\n");
 
 
+                    // while (1) {
+                    //     ccnt_t val = get_result(return_ep_path.capPtr);
+                    //     printf("Got result1 %lu\n", val);
+                    // }
 
 
                     /* get results */
 
                     ccnt_t ret1 = get_result(return_ep_path.capPtr);
-                    printf("Got result1 %lu\n", ret1);
+                    // printf("Got result1 %lu\n", ret1);
 
 
 
                     ccnt_t ret2 = get_result(return_ep_path.capPtr);
-                    printf("Got result2 %lu\n", ret2);
+                    // printf("Got result2 %lu\n", ret2);
 
                     if (ret1 > ret2) {
                         results->benchmarks[j][i] = ret1 - ret2;
@@ -1060,11 +1155,12 @@ int main(int argc, char **argv)
                 sel4utils_create_word_args(low_prio_t.argv_strings, low_prio_t.argv, NUM_ARGS,
                     low_prio_t.result_ep, low_prio_t_highlow, SEL4UTILS_REPLY_SLOT);
 
-                for (int i = 0; i < 2; i++) {
+                for (int i = 0; i < 6; i++) {
                     timing_init();
 
-
-                    error = seL4_CNode_Endpoint_SetThreshold(call_ep_path.root, call_ep_path.capPtr, call_ep_path.capDepth, 11 * US_IN_MS);
+#if defined(CONFIG_KERNEL_IPCTHRESHOLDS) && defined(CONFIG_KERNEL_MCS)
+                    error = seL4_CNode_Endpoint_SetThreshold(call_ep_path.root, call_ep_path.capPtr, call_ep_path.capDepth, params->threshold);
+#endif
                     // error = seL4_CNode_Endpoint_SetThreshold(call_ep_path.root, call_ep_path.capPtr, call_ep_path.capDepth, 0);
                     ZF_LOGF_IF(error, "Failed to set threshold");
 
@@ -1135,19 +1231,23 @@ int main(int argc, char **argv)
 
                     // Wait for the client to tell us its done
                     ret1 = get_result(return_ep_path.capPtr);
-                    printf("Val2: %d\n", ret1);
+                    if (ret1 ==99) {
+                        // Client got a rejection
+                        results->benchmarks[j][i] = 999999;
+                    } else {
+                        printf("Val2: %d\n", ret1);
 
-                    // Message the fault handler
-                    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 0);
-                    seL4_Send(high_low_ep.cptr, tag);
+                        // Message the fault handler
+                        seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 0);
+                        seL4_Send(high_low_ep.cptr, tag);
 
-                    // 
-                    ccnt_t faults = get_result(return_ep_path.capPtr);
+                        // 
+                        ccnt_t faults = get_result(return_ep_path.capPtr);
 
 
-                    // printf("Got result1 %lu\n", ret1);
-                    results->benchmarks[j][i] = faults;
-
+                        // printf("Got result1 %lu\n", ret1);
+                        results->benchmarks[j][i] = faults;
+                    }
 
 
                     seL4_TCB_Suspend(client_t.process.thread.tcb.cptr);

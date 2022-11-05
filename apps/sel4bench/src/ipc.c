@@ -49,6 +49,7 @@ static json_t *process_ipc_results(void *r)
     bool same_vspace[n];
     json_int_t length[n];
     json_int_t threshold[n];
+    json_int_t extra_refills[n];
 
     column_t extra_cols[] = {
         {
@@ -85,6 +86,11 @@ static json_t *process_ipc_results(void *r)
             .header = "Endpoint Threshold",
             .type = JSON_INTEGER,
             .integer_array = &threshold[0]
+        },
+        {
+            .header = "Extra Refills",
+            .type = JSON_INTEGER,
+            .integer_array = &extra_refills[0]
         }
     };
 
@@ -113,6 +119,7 @@ static json_t *process_ipc_results(void *r)
         same_vspace[i] = benchmark_params[i].same_vspace;
         length[i] = benchmark_params[i].length;
         threshold[i] = benchmark_params[i].threshold;
+        extra_refills[i] = benchmark_params[i].extra_refills;
 
         
         results[i] = process_result_core(RUNS, raw_results->benchmarks[i], desc, benchmark_params[i].threshold_test_type!=3);
