@@ -363,9 +363,12 @@ void run_bench(env_t *env, cspacepath_t result_ep_path, cspacepath_t ep_path,
                             client->process.thread.tcb.cptr);
         seL4_TCB_Resume(client->process.thread.tcb.cptr);
     }
-
+    // printf("Starting client\n");
     /* get results */
     *ret1 = get_result(result_ep_path.capPtr);
+    // printf("Got Result 1 %llu\n", *ret1);
+
+    error = seL4_CNode_Endpoint_SetThreshold(ep_path.root, ep_path.capPtr, ep_path.capDepth, 0);
 
     if (config_set(CONFIG_KERNEL_MCS) && params->server_fn != IPC_RECV_FUNC && params->passive) {
         /* convert server to active so it can send us the result */
@@ -375,6 +378,7 @@ void run_bench(env_t *env, cspacepath_t result_ep_path, cspacepath_t ep_path,
     }
 
     *ret2 = get_result(result_ep_path.capPtr);
+    // printf("Got Result 2 %llu\n", *ret2);
 
     /* clean up - clean server first in case it is sharing the client's cspace and vspace */
     seL4_TCB_Suspend(client->process.thread.tcb.cptr);
