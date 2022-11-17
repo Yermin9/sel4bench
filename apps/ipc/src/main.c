@@ -344,9 +344,7 @@ void run_bench(env_t *env, cspacepath_t result_ep_path, cspacepath_t ep_path,
     }
     #endif
 
-    api_sched_ctrl_configure(simple_get_sched_ctrl(&env->simple, 0), client->process.thread.sched_context.cptr,
-                            800 * US_IN_S, 800 * US_IN_S,
-                                5, 0);
+
  
     if (threshold==0 || !config_set(CONFIG_KERNEL_IPCTHRESHOLDS)) {
         error = benchmark_spawn_process(&client->process, &env->slab_vka, &env->vspace, NUM_ARGS, client->argv, 1);
@@ -354,9 +352,15 @@ void run_bench(env_t *env, cspacepath_t result_ep_path, cspacepath_t ep_path,
     } else {
         error = benchmark_spawn_process(&client->process, &env->slab_vka, &env->vspace, NUM_ARGS, client->argv, 0);
         /* Alter the SC parameters */
+        error = api_sc_unbind_object(client->process.thread.sched_context.cptr,
+                                client->process.thread.tcb.cptr);
 
+        error = api_sched_ctrl_configure(simple_get_sched_ctrl(&env->simple, 0), client->process.thread.sched_context.cptr,
+                800 * US_IN_MS, 900 * US_IN_MS,
+                    0, 0);      
 
-                                        
+        error = api_sc_bind(client->process.thread.sched_context.cptr,
+                            client->process.thread.tcb.cptr);
         seL4_TCB_Resume(client->process.thread.tcb.cptr);
     }
 
@@ -622,6 +626,8 @@ seL4_Word ipc_block_caller_sp(int argc, char *argv[]) {
 
     seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 10);
 
+
+    send_result(result_ep, 99);
 
     ccnt_t start=0;
 
