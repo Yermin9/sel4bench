@@ -736,6 +736,11 @@ seL4_Word malicious_client(int argc, char *argv[]) {
             send_result(result_ep,99);
             while (1) {}
         }
+        if (seL4_MessageInfo_get_label(tag2)!=seL4_NoError) {
+            send_result(result_ep,98);
+            send_result(result_ep,98);
+            while (1) {}
+        }
     }
     // Let the driver know we're done
     send_result(result_ep,100000);
@@ -1150,12 +1155,6 @@ int main(int argc, char **argv)
                 break;
             case 3:
                 // Test that thresholds work properly
-
-                // TODO
-                // Set up a timeout handler thread that just counts events
-                // Start with no threshold and count timeout events
-
-                // Then set a threshold and count timeouts
                 while (2<1) {}
                 seL4_CPtr clients_sc = sel4utils_copy_path_to_process(&server_thread_t.process, client_t_sc_path);
                 printf("Sc copy %d\n", clients_sc);
@@ -1268,6 +1267,21 @@ int main(int argc, char **argv)
 
                     timing_destroy();
                 }
+                break;
+            case 4:
+                /* Test that budget limits work properly */
+                
+                /* Set up a client and a server */
+
+                /* for increasing budget values */
+                /* Client calls server */
+                /* Server burns increasing amounts of budget */
+                /* Client gets reply and then blocks */
+                /* Main thread reads budget consumed on clients SC */
+
+
+
+                break;
         }
 
     }
