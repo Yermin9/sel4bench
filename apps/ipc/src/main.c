@@ -786,7 +786,8 @@ seL4_Word malicious_client_4(int argc, char *argv[]) {
 
     seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 10);
     // Signal the driver that we're starting
-    send_result(result_ep,42);
+    seL4_Send(result_ep, tag);
+    // send_result(result_ep,42);
 
     seL4_MessageInfo_t tag2 = seL4_Call(call_ep, tag);
 
@@ -1321,22 +1322,34 @@ int main(int argc, char **argv)
                     error = seL4_CNode_Endpoint_SetThreshold(call_ep_path.root, call_ep_path.capPtr, call_ep_path.capDepth, params->threshold);
 #endif
 
-                long int count = 1000000;
-                while (count <= 2000000) {
+                long int count = 000000;
+                while (count <= 3000000) {
                     int error;
                     sel4utils_create_word_args(server_thread_t.argv_strings, server_thread_t.argv, NUM_ARGS,
                                             server_thread_t.ep, server_thread_t.result_ep, count);
 
 
 
+                    // Unbind both client and server SC
+                    api_sc_unbind(server_thread_t.process.thread.sched_context.cptr);
+                    api_sc_unbind(client_t.process.thread.sched_context.cptr);
+
+                    // Rebind them
+                    api_sc_bind(server_thread_t.process.thread.sched_context.cptr,
+                            server_thread_t.process.thread.tcb.cptr);
+
+                    api_sc_bind(client_t.process.thread.sched_context.cptr,
+                            client_t.process.thread.tcb.cptr);
+
+
                     /* start server and get it ready */
-                    printf("Starting server.\n");
+                    // printf("Starting server.\n");
                     error = benchmark_spawn_process(&(server_thread_t.process), &env->slab_vka, &env->vspace, NUM_ARGS,
                                                 server_thread_t.argv, 1);
                     ZF_LOGF_IF(error, "Failed to start server");
 
                     /* Wait for it to tell us its initialised */
-                    printf("Waiting for server.\n");
+                    // printf("Waiting for server.\n");
                     seL4_Wait(return_ep_path.capPtr, NULL);
 
                     /* convert server to passive */
@@ -1346,18 +1359,21 @@ int main(int argc, char **argv)
 
 
                     /* Start the client */
-                    error = benchmark_spawn_process(&(server_thread_t.process), &env->slab_vka, &env->vspace, NUM_ARGS,
-                            server_thread_t.argv, 1);
+                    error = benchmark_spawn_process(&(client_t.process), &env->slab_vka, &env->vspace, NUM_ARGS,
+                            client_t.argv, 1);
 
+                    ZF_LOGF_IF(error, "Failed to start client");
                     /* Wait until it tells us its initialised */
-                    printf("Waiting for client.\n");
+                    // printf("Waiting for client.\n");
                     seL4_Wait(return_ep_path.capPtr, NULL);
+                    // printf("Resetting SC\n");
 
                     /* Reset the SC consumed tracking */
                     seL4_SchedContext_Consumed_t ret = seL4_SchedContext_Consumed(client_t.process.thread.sched_context.cptr);
 
                     /* Wait for the client to tell us its done */
                     seL4_Wait(return_ep_path.capPtr, NULL);
+                    // printf("Client Done\n");
 
                     /* Check the new SC tracking */
                     ret = seL4_SchedContext_Consumed(client_t.process.thread.sched_context.cptr);
@@ -1367,7 +1383,12 @@ int main(int argc, char **argv)
                     seL4_TCB_Suspend(client_t.process.thread.tcb.cptr);
                     seL4_TCB_Suspend(server_thread_t.process.thread.tcb.cptr);
 
-                    count= count + 1000000;
+                    // Rebind the server's SC
+                    api_sc_bind(server_thread_t.process.thread.sched_context.cptr,
+                        server_thread_t.process.thread.tcb.cptr);
+
+
+                    count= count + 51400;
                 }
 
 
